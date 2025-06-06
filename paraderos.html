@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Crear Paraderos</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw/dist/leaflet.draw.css" />
+  <style>
+    #map { height: 600px; }
+  </style>
+</head>
+<body>
+  <h2>Gestor de Paraderos</h2>
+
+  <div id="map"></div>
+  <button onclick="guardarParaderos()">Guardar Paraderos</button>
+  <button onclick="activarEdicionParaderos()">Editar posiciones</button>
+  <button onclick="desactivarEdicionParaderos()">Finalizar edición</button>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-draw/dist/leaflet.draw.js"></script>
+  
+  <script>
+    let map = L.map('map').setView([-40.574, -73.133], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+    const paraderosMap = new Map(); // clave = ID, valor = marker
+
+    const paraderosLayer = new L.FeatureGroup();
+    map.addLayer(paraderosLayer);
+
+    
+
+    const drawControl = new L.Control.Draw({
+      draw: {
+        marker: true,
+        polyline: false,
+        polygon: false,
+        circle: false,
+        rectangle: false,
+        circlemarker: false
+      },
+      edit: {
+        featureGroup: paraderosLayer
+      }
+    });
+    map.addControl(drawControl);
+
+    map.on('draw:created', function (e) {
+      if (e.layerType === 'marker') {
+        const layer = e.layer;
+        const nombreParadero = prompt("Nombre del paradero:");
+        if (nombreParadero) {
+          layer.bindPopup(`<strong>Paradero:</strong> ${nombreParadero}`);
+          layer.nombreParadero = nombreParadero; // guardamos nombre como propiedad
+          paraderosLayer.addLayer(layer);
+        }
+      }
+    });
+
+    function guardarParaderos() {
+      const paraderos = [];
+      paraderosLayer.eachLayer(layer => {
+        const { lat, lng } = layer.getLatLng();
+        const nombre = layer.nombreParadero || 'Sin nombre';
+        paraderos.push({ nombre, lat, lng });
+      });
+
+      fetch('guardar_paraderos.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(paraderos)
+      })
+      .then(res => res.text())
+      .then(msg => alert(msg))
+      .catch(err => console.error(err));
+    }
+
+    // Mostrar paraderos existentes
+    fetch('listar_paraderos.php')
+  .then(res => res.json())
+  .then(paraderos => {
+    paraderos.forEach(p => {
+      const marker = L.marker([p.lat, p.lng], { draggable: false }).addTo(paraderosLayer);
+      marker.paraderoId = p.id;
+
+      marker.bindPopup(`
+        <strong>${p.nombre}</strong><br>
+        <button onclick="editarNombreParadero(${p.id})">Renombrar</button>
+        <button onclick="eliminarParadero(${p.id})">Eliminar</button>
+      `);
+
+      marker.on('dragend', function (e) {
+        const nuevo = e.target.getLatLng();
+        actualizarParaderoPosicion(p.id, nuevo.lat, nuevo.lng);
+      });
+
+      paraderosMap.set(p.id, marker); // Guardamos el marcador
+    });
+  });
+
+
+  function editarParadero(id) {
+  const nuevoNombre = prompt("Nuevo nombre del paradero:");
+  if (!nuevoNombre) return;
+
+  fetch('editar_paradero.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, nombre: nuevoNombre })
+  })
+    .then(res => res.text())
+    .then(msg => {
+      alert(msg);
+      location.reload(); // o recargar solo los marcadores
+    })
+    .catch(err => alert("Error al editar: " + err));
+    }
+
+    function actualizarParaderoPosicion(id, lat, lng) {
+  fetch('editar_paradero_posicion.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, lat, lng })
+  })
+    .then(res => res.text())
+    .then(msg => console.log(msg))
+    .catch(err => console.error("Error al mover paradero:", err));
+}
+
+    function eliminarParadero(id) {
+    if (!confirm("¿Eliminar este paradero?")) return;
+
+    fetch('eliminar_paradero.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    })
+      .then(res => res.text())
+      .then(msg => {
+        alert(msg);
+        location.reload(); // o eliminar marcador del mapa sin recargar
+      })
+      .catch(err => alert("Error al eliminar: " + err));
+  }
+
+  function activarEdicionParaderos() {
+  paraderosMap.forEach(marker => marker.dragging.enable());
+  alert("Puedes mover los paraderos ahora.");
+}
+
+function desactivarEdicionParaderos() {
+  paraderosMap.forEach(marker => marker.dragging.disable());
+  alert("Edición desactivada.");
+}
+
+
+  </script>
+</body>
+</html>
