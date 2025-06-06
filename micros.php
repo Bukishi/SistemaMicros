@@ -41,10 +41,6 @@ function validarMicro($data, &$errores, &$alertas) {
     if (strtotime($permiso_desde) > strtotime($permiso_hasta)) {
         $errores[] = "La fecha de inicio del permiso no puede ser posterior a la fecha de vencimiento.";
     }
-    $limite_permiso = strtotime(date('Y') . '-03-31');
-    if (strtotime($permiso_hasta) > $limite_permiso) {
-        $errores[] = "La fecha de vencimiento del permiso no puede superar el 31 de marzo del año actual.";
-    }
 
     // Validar revision: no puede tener más de 1 año de antigüedad
     $fecha_revision = strtotime($revision);
@@ -52,9 +48,9 @@ function validarMicro($data, &$errores, &$alertas) {
         $errores[] = "La revisión técnica no puede tener más de un año de antigüedad.";
     }
 
-    // Validar padron: obligatorio, solo números, mínimo 6 dígitos
-    if (!preg_match('/^[0-9]{6,}$/', $padron)) {
-        $errores[] = "El padrón es obligatorio y debe tener al menos 6 dígitos numéricos.";
+    // Validar padron: obligatorio, solo números, mínimo 8 dígitos
+    if (!preg_match('/^[0-9]{8,}$/', $padron)) {
+        $errores[] = "El padrón es obligatorio y debe tener al menos 8 dígitos numéricos.";
     }
 
     // Validar folio seguro: obligatorio, 8 números
@@ -95,8 +91,6 @@ function obtenerRutas($pdo) {
 
 // CRUD
 
-$pdo = new PDO("pgsql:host=localhost;dbname=transporte", "postgres", "1234");
-$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
 $alertas = [];
 $errores = [];
