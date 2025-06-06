@@ -6,41 +6,90 @@ if (!isset($_SESSION['usuario_id'])) {
     exit;
 }
 
+// EDITAR CHOFER - mostrar formulario con datos
+if (isset($_GET['editar_id'])) {
+    $editar_id = $_GET['editar_id'];
+    $stmt = $pdo->prepare("SELECT c.id, c.nombre, c.apellido, c.licencia, c.examen_corma, u.correo, c.usuario_id 
+                           FROM chofer c
+                           JOIN usuario u ON c.usuario_id = u.id
+                           WHERE c.id = ?");
+    $stmt->execute([$editar_id]);
+    $choferEditar = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$choferEditar) {
+        echo "<div class='alert alert-danger'>Chofer no encontrado.</div>";
+        unset($choferEditar);
+    }
+}
+
+// ACTUALIZAR CHOFER
+if (isset($_POST['update'])) {
+    $id         = $_POST['id'];
+    $nombre     = $_POST['nombre'];
+    $apellido   = $_POST['apellido'];
+    $correo     = $_POST['correo'];
+    $licencia   = $_POST['licencia'];
+    $examen_corma = isset($_POST['examen_corma']) ? true : false;
+
+    // Obtener usuario_id para actualizar usuario
+    $stmt = $pdo->prepare("SELECT usuario_id FROM chofer WHERE id = ?");
+    $stmt->execute([$id]);
+    $usuarioIdRow = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($usuarioIdRow) {
+        $usuario_id = $usuarioIdRow['usuario_id'];
+        
+        // Actualizar usuario
+        $stmtUpdUser = $pdo->prepare("UPDATE usuario SET nombre = ?, apellido = ?, correo = ? WHERE id = ?");
+        try {
+            $stmtUpdUser->execute([$nombre, $apellido, $correo, $usuario_id]);
+        } catch (PDOException $e) {
+            if ($e->getCode() == '23505') {
+                echo "<div class='alert alert-danger'>El correo '$correo' ya está registrado. Por favor usa otro.</div>";
+            } else {
+                echo "<div class='alert alert-danger'>Error actualizando usuario: " . $e->getMessage() . "</div>";
+            }
+            goto skip_update; // para no actualizar chofer si hubo error
+        }
+        
+        // Actualizar chofer
+        $stmtUpdChofer = $pdo->prepare("UPDATE chofer SET nombre = ?, apellido = ?, licencia = ?, examen_corma = ? WHERE id = ?");
+        $stmtUpdChofer->execute([$nombre, $apellido, $licencia, $examen_corma, $id]);
+        echo "<div class='alert alert-success'>Chofer actualizado correctamente.</div>";
+    } else {
+        echo "<div class='alert alert-danger'>Chofer no encontrado para actualizar.</div>";
+    }
+    skip_update:
+}
+
 // Añadir chofer
 if (isset($_POST['add'])) {
-    $nombre   = $_POST['nombre'];
-    $apellido = $_POST['apellido'];
-    $correo   = $_POST['correo'];
-    $contraseña = password_hash($_POST['contraseña'], PASSWORD_DEFAULT);
-    $rol      = 'chofer';  // Asignamos el rol como chofer
+    $nombre      = $_POST['nombre'];
+    $apellido    = $_POST['apellido'];
+    $correo      = $_POST['correo'];
+    $contraseña  = password_hash($_POST['contraseña'], PASSWORD_DEFAULT);
+    $licencia    = $_POST['licencia'];
+    $examen_corma= isset($_POST['examen_corma']) ? true : false;
+    $rol         = 'chofer';
     
-    // Insertamos el nuevo usuario
     try {
         $stmt = $pdo->prepare("INSERT INTO usuario (nombre, apellido, correo, contraseña, rol) VALUES (?, ?, ?, ?, ?)");
         $stmt->execute([$nombre, $apellido, $correo, $contraseña, $rol]);
-        // Insertamos el chofer
-        $stmt2 = $pdo->prepare("INSERT INTO chofer (nombre, apellido, usuario_id) 
-            VALUES (?, ?, ?)");
-        $stmt2->execute([$nombre, $apellido, $usuario_id]);
+        $usuario_id = $pdo->lastInsertId();
+
+        $stmt2 = $pdo->prepare("INSERT INTO chofer (nombre, apellido, usuario_id, licencia, examen_corma) VALUES (?, ?, ?, ?, ?)");
+        $stmt2->execute([$nombre, $apellido, $usuario_id, $licencia, $examen_corma]);
     } catch (PDOException $e) {
         if ($e->getCode() == '23505') {
-            // Error de clave duplicada (por ejemplo, correo ya registrado)
             echo "<div class='alert alert-danger'>El correo '$correo' ya está registrado. Por favor usa otro.</div>";
         } else {
-            // Otro error
             echo "<div class='alert alert-danger'>Ocurrió un error: " . $e->getMessage() . "</div>";
         }
     }
-    
-
-    
 }
 
 // Eliminar chofer
 if (isset($_POST['delete'])) {
     $chofer_id = $_POST['chofer_id'];
 
-    // Obtener usuario_id antes de borrar el chofer
     $stmt = $pdo->prepare("SELECT usuario_id FROM chofer WHERE id = ?");
     $stmt->execute([$chofer_id]);
     $usuario = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -48,16 +97,10 @@ if (isset($_POST['delete'])) {
     if ($usuario) {
         $usuario_id = $usuario['usuario_id'];
 
-        // Eliminar asignación del chofer al micro
         $pdo->prepare("DELETE FROM asignacion_micro WHERE chofer_id = ?")->execute([$chofer_id]);
-
-        // Eliminar horarios
         $pdo->prepare("DELETE FROM horario WHERE chofer_id = ?")->execute([$chofer_id]);
-
-        // Eliminar chofer
         $pdo->prepare("DELETE FROM chofer WHERE id = ?")->execute([$chofer_id]);
 
-        // Eliminar usuario asociado si existe
         if ($usuario_id) {
             $pdo->prepare("DELETE FROM usuario WHERE id = ?")->execute([$usuario_id]);
         }
@@ -72,7 +115,6 @@ if (isset($_POST['assign_micro'])) {
     $hora_inicio = $_POST['hora_inicio'];
     $hora_fin    = $_POST['hora_fin'];
 
-    // Obtener la ruta_id de la micro
     $stmtRuta = $pdo->prepare("SELECT ruta_id FROM micro WHERE id = ?");
     $stmtRuta->execute([$micro_id]);
     $ruta = $stmtRuta->fetch(PDO::FETCH_ASSOC);
@@ -80,12 +122,10 @@ if (isset($_POST['assign_micro'])) {
     if ($ruta) {
         $ruta_id = $ruta['ruta_id'];
 
-        // Insertar en asignacion_micro
         $stmtAsignacion = $pdo->prepare("INSERT INTO asignacion_micro (chofer_id, micro_id, fecha, hora_inicio, hora_fin)
                                          VALUES (?, ?, ?, ?, ?)");
         $stmtAsignacion->execute([$chofer_id, $micro_id, $fecha, $hora_inicio, $hora_fin]);
 
-        // Insertar en horario
         $stmtHorario = $pdo->prepare("INSERT INTO horario (chofer_id, ruta_id, fecha, hora_inicio, hora_fin)
                                       VALUES (?, ?, ?, ?, ?)");
         $stmtHorario->execute([$chofer_id, $ruta_id, $fecha, $hora_inicio, $hora_fin]);
@@ -103,7 +143,6 @@ if (isset($_POST['update_schedule'])) {
     $inicio     = $_POST['inicio'];
     $fin        = $_POST['fin'];
 
-    // Obtener chofer_id a partir del horario_id
     $stmt = $pdo->prepare("SELECT chofer_id FROM horario WHERE id = ?");
     $stmt->execute([$horario_id]);
     $row = $stmt->fetch();
@@ -111,19 +150,16 @@ if (isset($_POST['update_schedule'])) {
     if ($row) {
         $chofer_id = $row['chofer_id'];
 
-        // Verificar si ya existe una asignación para ese chofer en esa fecha
         $checkStmt = $pdo->prepare("SELECT id FROM asignacion_micro WHERE chofer_id = ? AND fecha = ?");
         $checkStmt->execute([$chofer_id, $fecha]);
         $existing = $checkStmt->fetch();
 
         if ($existing) {
-            // Si existe, actualizamos
             $updateStmt = $pdo->prepare("UPDATE asignacion_micro 
                                          SET micro_id = ?, hora_inicio = ?, hora_fin = ?
                                          WHERE id = ?");
             $updateStmt->execute([$micro_id, $inicio, $fin, $existing['id']]);
         } else {
-            // Si no existe, insertamos
             $insertStmt = $pdo->prepare("INSERT INTO asignacion_micro 
                                          (chofer_id, micro_id, fecha, hora_inicio, hora_fin)
                                          VALUES (?, ?, ?, ?, ?)");
@@ -147,14 +183,12 @@ if (isset($_POST['update_schedule'])) {
     }
 }
 
-// Obtener datos para los formularios
 $micros   = $pdo->query("SELECT id, patente, ruta_id FROM micro")->fetchAll();
 $rutas    = $pdo->query("SELECT id, nombre FROM ruta")->fetchAll();
-$choferes = $pdo->query("SELECT c.id, c.nombre, c.apellido, u.correo, c.usuario_id 
+$choferes = $pdo->query("SELECT c.id, c.nombre, c.apellido, c.licencia, c.examen_corma, u.correo, c.usuario_id 
                           FROM chofer c
                           JOIN usuario u ON c.usuario_id = u.id")->fetchAll();
 
-// Obtener todos los horarios y la asignación de micro
 $horarios = $pdo->query("SELECT h.id, c.nombre AS chofer_nombre, 
                                         c.apellido AS chofer_apellido, 
                                         h.hora_inicio, 
@@ -177,31 +211,27 @@ $horarios = $pdo->query("SELECT h.id, c.nombre AS chofer_nombre,
 <head>
     <meta charset="UTF-8">
     <title>Gestión de Choferes</title>
-    <!-- Bootstrap CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Bootstrap Icons -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
     <style>
         button {
-  background-color:rgb(37, 95, 241); /* Color de fondo */
-  color: #fff; /* Color del texto */
-  padding: 10px 20px; /* Espaciado interno */
-  border: none; /* Elimina el borde por defecto */
-  border-radius: 5px; /* Relleno de esquinas */
-  cursor: pointer; /* Cambia el cursor en puntero */
-  transition: background-color 0.3s ease; /* Efecto de transición */
-}
+          background-color:rgb(37, 95, 241);
+          color: #fff;
+          padding: 10px 20px;
+          border: none;
+          border-radius: 5px;
+          cursor: pointer;
+          transition: background-color 0.3s ease;
+        }
 
-button:hover {
-  background-color:rgb(42, 158, 235); /* Cambia el color de fondo al pasar el mouse */
-}
+        button:hover {
+          background-color:rgb(42, 158, 235);
+        }
     </style>
 </head>
 <body class="bg-light">
 
 <button type="button" onclick="location.href='home.php'">Volver</button>
-
-
 
 <div class="container py-5">
     <h2 class="mb-4 text-center">Gestión de Choferes</h2>
@@ -213,181 +243,108 @@ button:hover {
                 <tr>
                     <th>Nombre</th>
                     <th>Apellido</th>
-                    <th>Inicio Horario</th>
-                    <th>Fin Horario</th>
-                    <th>Fecha</th>
-                    <th>Patente Micro</th>
-                    <th>Ruta</th>
+                    <th>Licencia</th>
+                    <th>Examen CORMA</th>
+                    <th>Correo</th>
+                    <th>Acciones</th>
                 </tr>
             </thead>
             <tbody>
-                <?php foreach ($horarios as $h): ?>
+                <?php foreach ($choferes as $chofer): ?>
                     <tr>
-                        <td><?= htmlspecialchars($h['chofer_nombre']) ?></td>
-                        <td><?= htmlspecialchars($h['chofer_apellido']) ?></td>
-                        <td><?= $h['hora_inicio'] ?></td>
-                        <td><?= $h['hora_fin'] ?></td>
-                        <td><?= $h['fecha'] ?></td>
-                        <td><?= htmlspecialchars($h['micro_patente']) ?></td>
-                        <td><?= htmlspecialchars($h['ruta_nombre']) ?></td>
+                        <td><?= htmlspecialchars($chofer['nombre']) ?></td>
+                        <td><?= htmlspecialchars($chofer['apellido']) ?></td>
+                        <td><?= htmlspecialchars($chofer['licencia']) ?></td>
+                        <td><?= $chofer['examen_corma'] ? 'Sí' : 'No' ?></td>
+                        <td><?= htmlspecialchars($chofer['correo']) ?></td>
+                        <td class="text-center">
+                            <form method="POST" style="display:inline-block;">
+                                <input type="hidden" name="chofer_id" value="<?= $chofer['id'] ?>">
+                                <button type="submit" name="delete" class="btn btn-danger btn-sm" onclick="return confirm('¿Eliminar chofer?')">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                            <a href="?editar_id=<?= $chofer['id'] ?>" class="btn btn-warning btn-sm">
+                                <i class="bi bi-pencil-square"></i>
+                            </a>
+                        </td>
                     </tr>
                 <?php endforeach; ?>
             </tbody>
         </table>
     </div>
-    <div class="accordion" id="choferAccordion">
 
-        <!-- Añadir Chofer -->
-        <div class="accordion-item border border-success rounded mb-3 shadow">
-            <h2 class="accordion-header" id="headingAdd">
-                <button class="accordion-button bg-success text-white" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAdd">
-                    <i class="bi bi-person-plus-fill me-2"></i> Añadir Chofer
-                </button>
-            </h2>
-            <div id="collapseAdd" class="accordion-collapse collapse show" data-bs-parent="#choferAccordion">
-                <div class="accordion-body">
-                    <form method="POST">
-                        <input type="text" name="nombre" class="form-control mb-2" placeholder="Nombre" required>
-                        <input type="text" name="apellido" class="form-control mb-2" placeholder="Apellido" required>
-                        <input type="email" name="correo" class="form-control mb-2" placeholder="Correo" required>
-                        <input type="password" name="contraseña" class="form-control mb-2" placeholder="Contraseña" required>
-                        <button type="submit" name="add" class="btn btn-outline-success w-100">Añadir Chofer</button>
-                    </form>
-                </div>
+    <!-- FORMULARIO EDITAR -->
+    <?php if (isset($choferEditar)): ?>
+        <h3 class="my-4 text-center">Editar Chofer</h3>
+        <form method="POST" class="mx-auto" style="max-width: 400px;">
+            <input type="hidden" name="id" value="<?= $choferEditar['id'] ?>">
+            <input type="text" name="nombre" placeholder="Nombre" class="form-control mb-2" value="<?= htmlspecialchars($choferEditar['nombre']) ?>" required>
+            <input type="text" name="apellido" placeholder="Apellido" class="form-control mb-2" value="<?= htmlspecialchars($choferEditar['apellido']) ?>" required>
+            <input type="email" name="correo" placeholder="Correo" class="form-control mb-2" value="<?= htmlspecialchars($choferEditar['correo']) ?>" required>
+            <!-- Licencia A4 únicamente -->
+            <select name="licencia" class="form-select mb-2" required>
+                <option value="A4" <?= $choferEditar['licencia'] === 'A4' ? 'selected' : '' ?>>A4</option>
+            </select>
+            <div class="form-check mb-2">
+                <input type="checkbox" name="examen_corma" class="form-check-input" id="cormaCheckEdit" <?= $choferEditar['examen_corma'] ? 'checked' : '' ?>>
+                <label class="form-check-label" for="cormaCheckEdit">Aprobó examen CORMA</label>
             </div>
+            <button type="submit" name="update">Actualizar Chofer</button>
+            <a href="<?= basename($_SERVER['PHP_SELF']) ?>" class="btn btn-secondary">Cancelar</a>
+        </form>
+    <?php else: ?>
+    <!-- FORMULARIO AGREGAR -->
+    <h3 class="my-4 text-center">Agregar Nuevo Chofer</h3>
+    <form method="POST" class="mx-auto" style="max-width: 400px;">
+        <input type="text" name="nombre" placeholder="Nombre" class="form-control mb-2" required>
+        <input type="text" name="apellido" placeholder="Apellido" class="form-control mb-2" required>
+        <input type="email" name="correo" placeholder="Correo" class="form-control mb-2" required>
+        <input type="password" name="contraseña" placeholder="Contraseña" class="form-control mb-2" required>
+        <!-- Licencia A4 únicamente -->
+        <select name="licencia" class="form-select mb-2" required>
+            <option value="A4" selected>A4</option>
+        </select>
+        <div class="form-check mb-2">
+            <input type="checkbox" name="examen_corma" class="form-check-input" id="cormaCheckAdd">
+            <label class="form-check-label" for="cormaCheckAdd">Aprobó examen CORMA</label>
         </div>
+        <button type="submit" name="add">Agregar Chofer</button>
+    </form>
+    <?php endif; ?>
 
-        <!-- Eliminar Chofer -->
-        <div class="accordion-item border border-danger rounded mb-3 shadow">
-            <h2 class="accordion-header" id="headingDelete">
-                <button class="accordion-button bg-danger text-white collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseDelete">
-                    <i class="bi bi-person-dash-fill me-2"></i> Eliminar Chofer
-                </button>
-            </h2>
-            <div id="collapseDelete" class="accordion-collapse collapse" data-bs-parent="#choferAccordion">
-                <div class="accordion-body">
-                    <form method="POST">
-                        <select name="chofer_id" class="form-select mb-2" required>
-                            <!-- Opciones generadas por PHP -->
-                            <?php foreach ($choferes as $c): ?>
-                                <option value="<?= $c['id'] ?>"><?= "{$c['nombre']} {$c['apellido']}" ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                        <button type="submit" name="delete" class="btn btn-outline-danger w-100">Eliminar</button>
-                    </form>
-                </div>
-            </div>
-        </div>
+    <hr class="my-5">
 
-        <!-- Asignar Micro -->
-        <div class="accordion-item border border-primary rounded mb-3 shadow">
-            <h2 class="accordion-header" id="headingAssign">
-                <button class="accordion-button bg-primary text-white collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAssign">
-                    <i class="bi bi-truck-front-fill me-2"></i> Asignar Micro a Chofer
-                </button>
-            </h2>
-            <div id="collapseAssign" class="accordion-collapse collapse" data-bs-parent="#choferAccordion">
-                <div class="accordion-body">
-                    <form method="POST">
-                        <select name="chofer_id" class="form-select mb-2" required>
-                            <?php foreach ($choferes as $c): ?>
-                                <option value="<?= $c['id'] ?>"><?= "{$c['nombre']} {$c['apellido']}" ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                        <select name="micro_id" class="form-select mb-2" required>
-                            <?php foreach ($micros as $m): ?>
-                                <option value="<?= $m['id'] ?>"><?= $m['patente'] ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                        <input type="date" name="fecha" class="form-control mb-2" required>
-                        <input type="time" name="hora_inicio" class="form-control mb-2" required>
-                        <input type="time" name="hora_fin" class="form-control mb-2" required>
-                        <button type="submit" name="assign_micro" class="btn btn-outline-primary w-100">Asignar Micro</button>
-                    </form>
-                </div>
-            </div>
-        </div>
-
-        <!-- Actualizar Horario -->
-        <div class="accordion-item border border-warning rounded mb-3 shadow">
-            <h2 class="accordion-header" id="headingUpdate">
-                <button class="accordion-button bg-warning text-dark collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseUpdate">
-                    <i class="bi bi-clock-history me-2"></i> Actualizar Horario
-                </button>
-            </h2>
-            <div id="collapseUpdate" class="accordion-collapse collapse" data-bs-parent="#choferAccordion">
-                <div class="accordion-body">
-                    <form method="POST">
-                        <select name="horario_id" class="form-select mb-2" required>
-                            <?php foreach ($horarios as $h): ?>
-                                <option value="<?= $h['id'] ?>">
-                                    <?= "{$h['chofer_nombre']} {$h['chofer_apellido']} - {$h['ruta_nombre']} - {$h['fecha']} {$h['hora_inicio']} - {$h['hora_fin']}" ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                        <input type="date" name="fecha" class="form-control mb-2" required>
-                        <input type="time" name="inicio" class="form-control mb-2" required>
-                        <input type="time" name="fin" class="form-control mb-2" required>
-                        <!-- Selector de ruta -->
-                        <select id="rutaSelect" name="ruta_id" class="form-select mb-2" required>
-                            <?php foreach ($rutas as $r): ?>
-                                <option value="<?= $r['id'] ?>"><?= $r['nombre'] ?></option>
-                            <?php endforeach; ?>
-                        </select>
-
-                        <!-- Selector de micro (patente) -->
-                        <select id="microSelect" name="micro_id" class="form-select mb-2" required>
-                            <?php foreach ($micros as $m): ?>
-                                <option value="<?= $m['id'] ?>" data-ruta="<?= $m['ruta_id'] ?>"><?= $m['patente'] ?></option>
-                            <?php endforeach; ?>
-                        </select>
-
-
-                        <input type="hidden" name="chofer_id" value="">
-                        <button type="submit" name="update_schedule" class="btn btn-outline-warning w-100">Actualizar Horario</button>
-                    </form>
-                </div>
-            </div>
-        </div>
-
+    <h3 class="mb-4 text-center">Horarios de Choferes</h3>
+    <div class="table-responsive">
+        <table class="table table-bordered table-hover table-striped shadow-sm">
+            <thead class="table-primary text-center">
+                <tr>
+                    <th>Chofer</th>
+                    <th>Patente Micro</th>
+                    <th>Ruta</th>
+                    <th>Fecha</th>
+                    <th>Hora Inicio</th>
+                    <th>Hora Fin</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($horarios as $horario): ?>
+                    <tr>
+                        <td><?= htmlspecialchars($horario['chofer_nombre'] . ' ' . $horario['chofer_apellido']) ?></td>
+                        <td><?= htmlspecialchars($horario['micro_patente'] ?? '-') ?></td>
+                        <td><?= htmlspecialchars($horario['ruta_nombre']) ?></td>
+                        <td><?= htmlspecialchars($horario['fecha']) ?></td>
+                        <td><?= htmlspecialchars($horario['hora_inicio']) ?></td>
+                        <td><?= htmlspecialchars($horario['hora_fin']) ?></td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
     </div>
+
 </div>
 
-<!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-    document.addEventListener('DOMContentLoaded', function () {
-        const rutaSelect = document.querySelector('select[name="ruta_id"]');
-        const microSelect = document.getElementById('microSelect');
-
-        rutaSelect.addEventListener('change', function () {
-            const selectedRuta = this.value;
-
-            // Limpiar todas las opciones
-            microSelect.innerHTML = '';
-
-            // Agregar solo las micros que coinciden con la ruta
-            <?php foreach ($micros as $m): ?>
-                if ('<?= $m['ruta_id'] ?>' === selectedRuta) {
-                    const option = document.createElement('option');
-                    option.value = '<?= $m['id'] ?>';
-                    option.textContent = '<?= $m['patente'] ?>';
-                    microSelect.appendChild(option);
-                }
-            <?php endforeach; ?>
-
-            // Si no hay micros, agregar una opción vacía o de aviso
-            if (microSelect.options.length === 0) {
-                const emptyOption = document.createElement('option');
-                emptyOption.textContent = 'No hay micros para esta ruta';
-                emptyOption.disabled = true;
-                emptyOption.selected = true;
-                microSelect.appendChild(emptyOption);
-            }
-        });
-    });
-</script>
-
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
-
