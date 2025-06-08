@@ -28,36 +28,37 @@ if (isset($_POST['update'])) {
     $apellido   = $_POST['apellido'];
     $correo     = $_POST['correo'];
     $licencia   = $_POST['licencia'];
-    $examen_corma = isset($_POST['examen_corma']) ? true : false;
+    $examen_corma = isset($_POST['examen_corma']) ? 1 : 0;
 
     // Obtener usuario_id para actualizar usuario
     $stmt = $pdo->prepare("SELECT usuario_id FROM chofer WHERE id = ?");
     $stmt->execute([$id]);
     $usuarioIdRow = $stmt->fetch(PDO::FETCH_ASSOC);
+
     if ($usuarioIdRow) {
         $usuario_id = $usuarioIdRow['usuario_id'];
-        
+
         // Actualizar usuario
         $stmtUpdUser = $pdo->prepare("UPDATE usuario SET nombre = ?, apellido = ?, correo = ? WHERE id = ?");
         try {
             $stmtUpdUser->execute([$nombre, $apellido, $correo, $usuario_id]);
+
+            // Solo si no hay error, actualiza chofer
+            $stmtUpdChofer = $pdo->prepare("UPDATE chofer SET nombre = ?, apellido = ?, licencia = ?, examen_corma = ? WHERE id = ?");
+            $stmtUpdChofer->execute([$nombre, $apellido, $licencia, $examen_corma, $id]);
+
+            echo "<div class='alert alert-success'>Chofer actualizado correctamente.</div>";
+
         } catch (PDOException $e) {
             if ($e->getCode() == '23505') {
                 echo "<div class='alert alert-danger'>El correo '$correo' ya está registrado. Por favor usa otro.</div>";
             } else {
                 echo "<div class='alert alert-danger'>Error actualizando usuario: " . $e->getMessage() . "</div>";
             }
-            goto skip_update; // para no actualizar chofer si hubo error
         }
-        
-        // Actualizar chofer
-        $stmtUpdChofer = $pdo->prepare("UPDATE chofer SET nombre = ?, apellido = ?, licencia = ?, examen_corma = ? WHERE id = ?");
-        $stmtUpdChofer->execute([$nombre, $apellido, $licencia, $examen_corma, $id]);
-        echo "<div class='alert alert-success'>Chofer actualizado correctamente.</div>";
     } else {
         echo "<div class='alert alert-danger'>Chofer no encontrado para actualizar.</div>";
     }
-    skip_update:
 }
 
 // Añadir chofer
