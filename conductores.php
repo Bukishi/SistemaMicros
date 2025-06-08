@@ -46,6 +46,8 @@ if (isset($_POST['update'])) {
             // Solo si no hay error, actualiza chofer
             $stmtUpdChofer = $pdo->prepare("UPDATE chofer SET nombre = ?, apellido = ?, licencia = ?, examen_corma = ? WHERE id = ?");
             $stmtUpdChofer->execute([$nombre, $apellido, $licencia, $examen_corma, $id]);
+header('Location: ' . basename($_SERVER['PHP_SELF']));
+exit;
 
             echo "<div class='alert alert-success'>Chofer actualizado correctamente.</div>";
 
