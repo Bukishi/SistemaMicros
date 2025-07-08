@@ -21,7 +21,7 @@ if (isset($_POST['add'])) {
     $kilometraje = $_POST['kilometraje'] ?? null;
     $fecha_ingreso = $_POST['fecha_ingreso'] ?? null;
     $fecha_salida = $_POST['fecha_salida'] ?? null;
-    $confirmado = isset($_POST['confirmado']);
+    $confirmado = isset($_POST['confirmado']) ? true : false;
     $ruta_id = $_POST['ruta_id'] ?? null;
 
     if (!$patente || !$tipo || !$fecha_ingreso || !$fecha_salida) {
@@ -74,8 +74,8 @@ if (isset($_POST['edit'])) {
     $kilometraje = $_POST['kilometraje'] ?? null;
     $fecha_ingreso = $_POST['fecha_ingreso'] ?? null;
     $fecha_salida = $_POST['fecha_salida'] ?? null;
-    $confirmado = isset($_POST['confirmado']);
-    $ruta_id = $_POST['ruta_id'] ?? null;
+    // CORRECCIÓN: asegurar que confirmado es booleano y pasar 0 o 1 en execute
+    $confirmado = isset($_POST['confirmado']) && $_POST['confirmado'] ? true : false;
 
     if (!$id || !$tipo || !$fecha_ingreso || !$fecha_salida) {
         $mensaje = "Todos los campos obligatorios deben ser completados para editar.";
@@ -95,7 +95,7 @@ if (isset($_POST['edit'])) {
                 $fecha_ingreso,
                 $fecha_salida,
                 $tipo === 'cambio_aceite' ? $kilometraje : null,
-                $confirmado,
+                $confirmado ? 1 : 0,
                 $id
             ]);
 
@@ -125,12 +125,13 @@ $rutas = $pdo->query("SELECT id, nombre FROM ruta ORDER BY nombre")->fetchAll();
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
+    <meta charset="UTF-8" />
     <title>Mantenimientos</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
     <style>
         input[name="patente"] { text-transform: uppercase; }
         input[type="checkbox"] { width: 18px; height: 18px; border: 2px solid #444; }
+        tr.no-confirmado { color: red; }
     </style>
 </head>
 <body class="bg-light">
@@ -142,11 +143,11 @@ $rutas = $pdo->query("SELECT id, nombre FROM ruta ORDER BY nombre")->fetchAll();
     <?php endif; ?>
 
     <form method="POST" class="border p-4 bg-white shadow-sm mb-4" id="form-mantenimiento">
-        <input type="hidden" name="id" id="id" value="">
+        <input type="hidden" name="id" id="id" value="" />
         <div class="row mb-3">
             <div class="col-md-4">
                 <label for="patente" class="form-label">Patente *</label>
-                <input type="text" name="patente" id="patente" class="form-control" maxlength="6" required>
+                <input type="text" name="patente" id="patente" class="form-control" maxlength="6" required />
             </div>
             <div class="col-md-4">
                 <label for="ruta_id" class="form-label">Ruta *</label>
@@ -171,7 +172,7 @@ $rutas = $pdo->query("SELECT id, nombre FROM ruta ORDER BY nombre")->fetchAll();
 
         <div class="mb-3" id="kilometraje_group" style="display:none;">
             <label for="kilometraje" class="form-label">Kilometraje</label>
-            <input type="number" name="kilometraje" id="kilometraje" class="form-control" min="0" max="999999">
+            <input type="number" name="kilometraje" id="kilometraje" class="form-control" min="0" max="999999" />
         </div>
 
         <div class="mb-3">
@@ -182,16 +183,16 @@ $rutas = $pdo->query("SELECT id, nombre FROM ruta ORDER BY nombre")->fetchAll();
         <div class="row mb-3">
             <div class="col-md-6">
                 <label for="fecha_ingreso" class="form-label">Fecha de ingreso *</label>
-                <input type="date" name="fecha_ingreso" id="fecha_ingreso" class="form-control" required>
+                <input type="date" name="fecha_ingreso" id="fecha_ingreso" class="form-control" required />
             </div>
             <div class="col-md-6">
                 <label for="fecha_salida" class="form-label">Fecha de salida *</label>
-                <input type="date" name="fecha_salida" id="fecha_salida" class="form-control" required>
+                <input type="date" name="fecha_salida" id="fecha_salida" class="form-control" required />
             </div>
         </div>
 
         <div class="mb-3 form-check">
-            <input type="checkbox" name="confirmado" id="confirmado" class="form-check-input">
+            <input type="checkbox" name="confirmado" id="confirmado" class="form-check-input" />
             <label for="confirmado" class="form-check-label fw-bold">Confirmo que el mantenimiento fue realizado</label>
         </div>
 
@@ -217,7 +218,7 @@ $rutas = $pdo->query("SELECT id, nombre FROM ruta ORDER BY nombre")->fetchAll();
         </thead>
         <tbody>
             <?php foreach ($mantenimientos as $m): ?>
-                <tr style="color: <?= $m['confirmado'] ? 'green' : 'red' ?>">
+                <tr class="<?= $m['confirmado'] ? '' : 'no-confirmado' ?>">
                     <td><?= h($m['patente']) ?></td>
                     <td><?= h($m['ruta_nombre'] ?? '') ?></td>
                     <td><?= h(str_replace('_', ' ', $m['tipo'])) ?></td>
@@ -243,7 +244,7 @@ $rutas = $pdo->query("SELECT id, nombre FROM ruta ORDER BY nombre")->fetchAll();
                         ?>
                         <button class="btn btn-sm btn-warning btn-edit" data-info="<?= $json_data ?>">Editar</button>
                         <form method="POST" style="display:inline;" onsubmit="return confirm('¿Seguro que deseas eliminar este mantenimiento?');">
-                            <input type="hidden" name="id" value="<?= h($m['id']) ?>">
+                            <input type="hidden" name="id" value="<?= h($m['id']) ?>" />
                             <button type="submit" name="delete" class="btn btn-sm btn-danger">Eliminar</button>
                         </form>
                     </td>
@@ -289,6 +290,15 @@ document.getElementById('btn-cancel').addEventListener('click', () => {
     document.getElementById('btn-edit').style.display = 'none';
     document.getElementById('btn-cancel').style.display = 'none';
     document.getElementById('kilometraje_group').style.display = 'none';
+});
+
+document.getElementById('form-mantenimiento').addEventListener('submit', function (e) {
+    const isAdd = document.getElementById('btn-add').style.display !== 'none';
+    const confirmado = document.getElementById('confirmado').checked;
+    if (isAdd && !confirmado) {
+        const continuar = confirm("Estás guardando el mantenimiento sin confirmar. ¿Deseas continuar?");
+        if (!continuar) e.preventDefault();
+    }
 });
 </script>
 </body>
