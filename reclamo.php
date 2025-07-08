@@ -324,7 +324,7 @@ function checkedInArray($value, $array) {
                         <td class="text-center"><?= htmlspecialchars($reclamo['id']) ?></td>
                         <td><?= htmlspecialchars($reclamo['usuario_nombre'] . ' ' . $reclamo['usuario_apellido']) ?></td>
                         <td><?= htmlspecialchars($reclamo['ruta_nombre'] ?? '-') ?></td>
-                        <td class="text-center"><?= htmlspecialchars($reclamo['fecha']) ?></td>
+                        <td class="text-center"><?= htmlspecialchars(date('d-m-Y', strtotime($reclamo['fecha']))) ?></td>
                         <td class="text-center"><?= htmlspecialchars($reclamo['hora']) ?></td>
                         <td><?= htmlspecialchars(implode(', ', $categorias_reclamo)) ?></td>
                         <td><?= htmlspecialchars(implode(', ', $tipos_reclamo)) ?></td>
