@@ -1,69 +1,115 @@
 <?php
-// micros.php
-require 'config.php'; // conexión a la DB
+require 'config.php';
 
-// Función para validar y preparar datos, recibe alertas y errores por referencia
 function validarMicro($data, &$errores, &$alertas) {
-    $patente = strtoupper(trim($data['patente']));
-    $permiso_desde = $data['permiso_desde'];
-    $permiso_hasta = $data['permiso_hasta'];
-    $revision = $data['revision'];
-    $ruta_id = $data['ruta_id'];
-    $padron = $data['padron'];
-    $herramientas = isset($data['herramientas']) ? true : false;
-    $folio_seguro = trim($data['folio_seguro']);
-    $seguro_desde = $data['seguro_desde'];
-    $seguro_hasta = $data['seguro_hasta'];
-    $mantenciones_al_dia = isset($data['mantenciones_al_dia']) ? true : false;
+    $patente = strtoupper(trim($data['patente'] ?? ''));
 
-    $hoy = date('Y-m-d');
+    $permiso_desde = $data['permiso_desde'] ?? '';
+    $permiso_hasta = $data['permiso_hasta'] ?? '';
+    $revision_desde = $data['revision_desde'] ?? '';
+    $revision_hasta = $data['revision_hasta'] ?? '';
+    $ruta_id = $data['ruta_id'] ?? '';
+    $padron = trim($data['padron'] ?? '');
+    // Booleanos convertidos a int para evitar errores
+    $herramientas = (isset($data['herramientas']) && $data['herramientas'] == '1') ? 1 : 0;
+    $folio_seguro = trim($data['folio_seguro'] ?? '');
+    $seguro_desde = $data['seguro_desde'] ?? '';
+    $seguro_hasta = $data['seguro_hasta'] ?? '';
+    $mantenciones_al_dia = (isset($data['mantenciones_al_dia']) && $data['mantenciones_al_dia'] == '1') ? 1 : 0;
 
-    // Validar patente: 6 caracteres alfanuméricos
-    if (!preg_match('/^[A-Z0-9]{6}$/', $patente)) {
-        $errores[] = "La patente debe tener exactamente 6 caracteres alfanuméricos (sin espacios ni símbolos).";
-    }
+    // Fechas límites
+    $permiso_min = strtotime(date('Y') . '-03-01');
+    $permiso_max = strtotime('2026-03-31');
+    $revision_min = strtotime('2025-07-15');
+    $revision_max = strtotime('2026-12-12');
 
-    // Alertas específicas (no bloquean inserción)
-    if ($permiso_hasta < $hoy) {
-        $alertas[] = "El permiso de circulación está vencido.";
-    }
-    if ($revision < $hoy) {
-        $alertas[] = "La revisión técnica está vencida.";
-    }
-    if ($seguro_hasta < $hoy) {
-        $alertas[] = "El seguro está vencido.";
-    }
-    if (empty($ruta_id) || !is_numeric($ruta_id) || intval($ruta_id) <= 0) {
-        $alertas[] = "El micro no tiene una ruta asignada.";
+    // Validar patente
+    if (!preg_match('/^[A-Z]{4}[0-9]{2}$/', $patente)) {
+        $errores[] = "La patente debe tener 4 letras seguidas de 2 números (ej: ABCD12).";
     }
 
-    // Validar permiso fechas: permiso_desde <= permiso_hasta, permiso_hasta <= 31 marzo del año actual
-    if (strtotime($permiso_desde) > strtotime($permiso_hasta)) {
-        $errores[] = "La fecha de inicio del permiso no puede ser posterior a la fecha de vencimiento.";
+    // Validar permiso
+    if (!$permiso_desde || !$permiso_hasta) {
+        $errores[] = "Debe ingresar fecha inicio y término del permiso de circulación.";
+    } else {
+        $pd = strtotime($permiso_desde);
+        $ph = strtotime($permiso_hasta);
+        if ($pd < $permiso_min) {
+            $errores[] = "La fecha de inicio del permiso no puede ser anterior al 01-03-" . date('Y') . ".";
+        }
+        if ($ph > $permiso_max) {
+            $errores[] = "La fecha de término del permiso no puede ser posterior al 31-03-2026.";
+        }
+        if ($ph < $pd) {
+            $errores[] = "La fecha de término del permiso no puede ser anterior a la fecha de inicio.";
+        }
+        $duracion_permiso = ($ph - $pd) / (60*60*24);
+        if ($duracion_permiso != 365 && $duracion_permiso != 366) { // Exactamente 1 año (considera bisiesto)
+            $errores[] = "El permiso de circulación debe durar exactamente 1 año.";
+        }
     }
 
-    // Validar revision: no puede tener más de 1 año de antigüedad
-    $fecha_revision = strtotime($revision);
-    if ($fecha_revision < strtotime('-1 year')) {
-        $errores[] = "La revisión técnica no puede tener más de un año de antigüedad.";
+    // Validar revisión
+    if (!$revision_desde || !$revision_hasta) {
+        $errores[] = "Debe ingresar fecha inicio y término de la revisión técnica.";
+    } else {
+        $rd = strtotime($revision_desde);
+        $rh = strtotime($revision_hasta);
+        if ($rd < $revision_min) {
+            $errores[] = "La fecha de inicio de la revisión no puede ser anterior al 15-07-2025.";
+        }
+        if ($rh > $revision_max) {
+            $errores[] = "La fecha de término de la revisión no puede ser posterior al 12-12-2026.";
+        }
+        if ($rh < $rd) {
+            $errores[] = "La fecha de término de la revisión no puede ser anterior a la fecha de inicio.";
+        }
+        $duracion_revision = ($rh - $rd) / (60*60*24);
+        if ($duracion_revision != 365 && $duracion_revision != 366) {
+            $errores[] = "La revisión técnica debe durar exactamente 1 año.";
+        }
     }
 
-    // Validar padron: obligatorio, solo números, mínimo 8 dígitos
-    if (!preg_match('/^[0-9]{8,}$/', $padron)) {
-        $errores[] = "El padrón es obligatorio y debe tener al menos 8 dígitos numéricos.";
+    // Validar seguro (mismas reglas que permiso)
+    if (!$seguro_desde || !$seguro_hasta) {
+        $errores[] = "Debe ingresar fecha inicio y término del seguro.";
+    } else {
+        $sd = strtotime($seguro_desde);
+        $sh = strtotime($seguro_hasta);
+        if ($sd < $permiso_min) {
+            $errores[] = "La fecha de inicio del seguro no puede ser anterior al 01-03-" . date('Y') . ".";
+        }
+        if ($sh > $permiso_max) {
+            $errores[] = "La fecha de término del seguro no puede ser posterior al 31-03-2026.";
+        }
+        if ($sh < $sd) {
+            $errores[] = "La fecha de término del seguro no puede ser anterior a la fecha de inicio.";
+        }
+        $duracion_seguro = ($sh - $sd) / (60*60*24);
+        if ($duracion_seguro != 365 && $duracion_seguro != 366) {
+            $errores[] = "El seguro debe durar exactamente 1 año.";
+        }
     }
 
-    // Validar folio seguro: obligatorio, 8 números
-    if (!preg_match('/^[0-9]{8}$/', $folio_seguro)) {
-        $errores[] = "El folio del seguro es obligatorio y debe tener exactamente 8 números.";
+    // Validar padrón
+    if (!preg_match('/^\d{6,}$/', $padron)) {
+        if ($padron === '') {
+            $alertas[] = "El padrón es obligatorio y debe tener al menos 6 números.";
+        } else {
+            $errores[] = "El padrón debe tener al menos 6 dígitos numéricos.";
+        }
     }
 
-    // Validar seguro fechas: seguro_desde <= seguro_hasta
-    if (strtotime($seguro_desde) > strtotime($seguro_hasta)) {
-        $errores[] = "La fecha de inicio del seguro no puede ser posterior a la fecha de vencimiento.";
+    // Validar folio seguro
+    if (!preg_match('/^\d{8}$/', $folio_seguro)) {
+        if ($folio_seguro === '') {
+            $alertas[] = "El folio del seguro es obligatorio y debe tener exactamente 8 números.";
+        } else {
+            $errores[] = "El folio del seguro debe tener exactamente 8 dígitos numéricos.";
+        }
     }
 
-    // Validar ruta_id numérico y >0
+    // Validar ruta
     if (!is_numeric($ruta_id) || intval($ruta_id) <= 0) {
         $errores[] = "Debe seleccionar una ruta válida.";
     }
@@ -72,7 +118,8 @@ function validarMicro($data, &$errores, &$alertas) {
         'patente' => $patente,
         'permiso_desde' => $permiso_desde,
         'permiso_hasta' => $permiso_hasta,
-        'revision' => $revision,
+        'revision_desde' => $revision_desde,
+        'revision_hasta' => $revision_hasta,
         'ruta_id' => intval($ruta_id),
         'padron' => $padron,
         'herramientas' => $herramientas,
@@ -83,14 +130,10 @@ function validarMicro($data, &$errores, &$alertas) {
     ];
 }
 
-// Función para obtener rutas (para el select)
 function obtenerRutas($pdo) {
     $stmt = $pdo->query("SELECT id, nombre FROM ruta ORDER BY nombre");
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
-
-// CRUD
-
 
 $alertas = [];
 $errores = [];
@@ -100,8 +143,8 @@ if (isset($_POST['crear'])) {
     if (empty($errores)) {
         try {
             $sql = "INSERT INTO micro 
-            (patente, permiso_desde, permiso_hasta, revision, ruta_id, padron, herramientas, folio_seguro, seguro_desde, seguro_hasta, mantenciones_al_dia) 
-            VALUES (:patente, :permiso_desde, :permiso_hasta, :revision, :ruta_id, :padron, :herramientas, :folio_seguro, :seguro_desde, :seguro_hasta, :mantenciones_al_dia)";
+                (patente, permiso_desde, permiso_hasta, revision_desde, revision_hasta, ruta_id, padron, herramientas, folio_seguro, seguro_desde, seguro_hasta, mantenciones_al_dia) 
+                VALUES (:patente, :permiso_desde, :permiso_hasta, :revision_desde, :revision_hasta, :ruta_id, :padron, :herramientas, :folio_seguro, :seguro_desde, :seguro_hasta, :mantenciones_al_dia)";
             $stmt = $pdo->prepare($sql);
             $stmt->execute($datos);
             header("Location: micros.php");
@@ -112,24 +155,16 @@ if (isset($_POST['crear'])) {
     }
 }
 
-if (isset($_GET['eliminar'])) {
-    $id = (int) $_GET['eliminar'];
-    $stmt = $pdo->prepare("DELETE FROM micro WHERE id = ?");
-    $stmt->execute([$id]);
-    header("Location: micros.php");
-    exit;
-}
-
 $micro_editar = null;
 if (isset($_GET['editar'])) {
-    $id = (int) $_GET['editar'];
+    $id = (int)$_GET['editar'];
     $stmt = $pdo->prepare("SELECT * FROM micro WHERE id = ?");
     $stmt->execute([$id]);
     $micro_editar = $stmt->fetch(PDO::FETCH_ASSOC);
 }
 
 if (isset($_POST['actualizar'])) {
-    $id = (int) $_POST['id'];
+    $id = (int)$_POST['id'];
     $datos = validarMicro($_POST, $errores, $alertas);
     if (empty($errores)) {
         try {
@@ -137,7 +172,8 @@ if (isset($_POST['actualizar'])) {
                 patente = :patente, 
                 permiso_desde = :permiso_desde,
                 permiso_hasta = :permiso_hasta,
-                revision = :revision,
+                revision_desde = :revision_desde,
+                revision_hasta = :revision_hasta,
                 ruta_id = :ruta_id,
                 padron = :padron,
                 herramientas = :herramientas,
@@ -157,20 +193,43 @@ if (isset($_POST['actualizar'])) {
     }
 }
 
-// Obtener micros
+if (isset($_GET['eliminar'])) {
+    $id = (int)$_GET['eliminar'];
+    $stmt = $pdo->prepare("DELETE FROM micro WHERE id = ?");
+    $stmt->execute([$id]);
+    header("Location: micros.php");
+    exit;
+}
+
 $stmt = $pdo->query("SELECT m.*, r.nombre as ruta_nombre FROM micro m LEFT JOIN ruta r ON m.ruta_id = r.id ORDER BY m.id DESC");
 $micros = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Obtener rutas para el select
 $rutas = obtenerRutas($pdo);
+
+function formatoFecha($fecha) {
+    if (!$fecha) return '';
+    $timestamp = strtotime($fecha);
+    return date('d-m-Y', $timestamp);
+}
 ?>
 
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8" />
-    <title>Gestión de Micros</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+<meta charset="UTF-8" />
+<title>Gestión de Micros</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+<style>
+    input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+    }
+    /* Para mostrar en rojo fila si herramientas o mantenciones no están marcadas */
+    .no-marcado {
+        background-color: #f8d7da !important;
+        color: #842029 !important;
+    }
+</style>
 </head>
 <body>
 <div class="container mt-4">
@@ -196,39 +255,47 @@ $rutas = obtenerRutas($pdo);
         </div>
     <?php endif; ?>
 
-    <!-- Formulario crear/editar -->
-    <form method="POST" class="mb-4">
-        <input type="hidden" name="id" value="<?= $micro_editar['id'] ?? '' ?>">
+    <form method="POST" id="form-micro" class="mb-4">
+        <input type="hidden" name="id" value="<?= htmlspecialchars($micro_editar['id'] ?? '') ?>">
+
         <div class="row mb-3">
             <div class="col-md-3">
                 <label>Patente</label>
                 <input type="text" name="patente" maxlength="6" class="form-control" required
-                    value="<?= htmlspecialchars($micro_editar['patente'] ?? '') ?>">
+                    value="<?= htmlspecialchars($_POST['patente'] ?? $micro_editar['patente'] ?? '') ?>"
+                    pattern="[A-Za-z]{4}[0-9]{2}"
+                    title="4 letras seguidas de 2 números. Ejemplo: ABCD12"
+                    placeholder="4 letras y 2 números, ej: ABCD12">
             </div>
             <div class="col-md-3">
                 <label>Permiso Desde</label>
                 <input type="date" name="permiso_desde" class="form-control" required
-                    value="<?= htmlspecialchars($micro_editar['permiso_desde'] ?? '') ?>">
+                    value="<?= htmlspecialchars($_POST['permiso_desde'] ?? $micro_editar['permiso_desde'] ?? '') ?>">
             </div>
             <div class="col-md-3">
                 <label>Permiso Hasta</label>
                 <input type="date" name="permiso_hasta" class="form-control" required
-                    value="<?= htmlspecialchars($micro_editar['permiso_hasta'] ?? '') ?>">
+                    value="<?= htmlspecialchars($_POST['permiso_hasta'] ?? $micro_editar['permiso_hasta'] ?? '') ?>">
             </div>
             <div class="col-md-3">
-                <label>Revisión Técnica</label>
-                <input type="date" name="revision" class="form-control" required
-                    value="<?= htmlspecialchars($micro_editar['revision'] ?? '') ?>">
+                <label>Revisión Desde</label>
+                <input type="date" name="revision_desde" class="form-control" required
+                    value="<?= htmlspecialchars($_POST['revision_desde'] ?? $micro_editar['revision_desde'] ?? '') ?>">
             </div>
         </div>
 
         <div class="row mb-3">
             <div class="col-md-3">
+                <label>Revisión Hasta</label>
+                <input type="date" name="revision_hasta" class="form-control" required
+                    value="<?= htmlspecialchars($_POST['revision_hasta'] ?? $micro_editar['revision_hasta'] ?? '') ?>">
+            </div>
+            <div class="col-md-3">
                 <label>Ruta</label>
                 <select name="ruta_id" class="form-select" required>
                     <option value="">Seleccione ruta</option>
                     <?php foreach ($rutas as $ruta): ?>
-                        <option value="<?= $ruta['id'] ?>" <?= (isset($micro_editar['ruta_id']) && $micro_editar['ruta_id'] == $ruta['id']) ? 'selected' : '' ?>>
+                        <option value="<?= $ruta['id'] ?>" <?= ((($_POST['ruta_id'] ?? $micro_editar['ruta_id'] ?? '') == $ruta['id']) ? 'selected' : '') ?>>
                             <?= htmlspecialchars($ruta['nombre']) ?>
                         </option>
                     <?php endforeach; ?>
@@ -238,34 +305,42 @@ $rutas = obtenerRutas($pdo);
                 <label>Padrón</label>
                 <input type="text" name="padron" class="form-control" required pattern="\d{6,}"
                     title="Solo números, mínimo 6 dígitos"
-                    value="<?= htmlspecialchars($micro_editar['padron'] ?? '') ?>">
+                    placeholder="Mínimo 6 números"
+                    value="<?= htmlspecialchars($_POST['padron'] ?? $micro_editar['padron'] ?? '') ?>">
             </div>
-            <div class="col-md-3">
-                <label>Herramientas</label><br>
-                <input type="checkbox" name="herramientas" <?= (!empty($micro_editar['herramientas'])) ? 'checked' : '' ?>>
-            </div>
-            <div class="col-md-3">
-                <label>Folio Seguro</label>
-                <input type="text" name="folio_seguro" maxlength="8" class="form-control" required pattern="\d{8}"
-                    title="Exactamente 8 números"
-                    value="<?= htmlspecialchars($micro_editar['folio_seguro'] ?? '') ?>">
+            <div class="col-md-3 d-flex align-items-center">
+                <!-- hidden para enviar siempre valor -->
+                <input type="hidden" name="herramientas" value="0">
+                <input type="checkbox" name="herramientas" id="herramientas" value="1" class="form-check-input"
+                    <?= (($_POST['herramientas'] ?? $micro_editar['herramientas'] ?? false) ? 'checked' : '') ?>>
+                <label for="herramientas" class="ms-2 mb-0">Herramientas</label>
             </div>
         </div>
 
         <div class="row mb-3">
             <div class="col-md-3">
+                <label>Folio Seguro</label>
+                <input type="text" name="folio_seguro" maxlength="8" class="form-control" required pattern="\d{8}"
+                    title="Exactamente 8 números"
+                    placeholder="Exactamente 8 números"
+                    value="<?= htmlspecialchars($_POST['folio_seguro'] ?? $micro_editar['folio_seguro'] ?? '') ?>">
+            </div>
+            <div class="col-md-3">
                 <label>Seguro Desde</label>
                 <input type="date" name="seguro_desde" class="form-control" required
-                    value="<?= htmlspecialchars($micro_editar['seguro_desde'] ?? '') ?>">
+                    value="<?= htmlspecialchars($_POST['seguro_desde'] ?? $micro_editar['seguro_desde'] ?? '') ?>">
             </div>
             <div class="col-md-3">
                 <label>Seguro Hasta</label>
                 <input type="date" name="seguro_hasta" class="form-control" required
-                    value="<?= htmlspecialchars($micro_editar['seguro_hasta'] ?? '') ?>">
+                    value="<?= htmlspecialchars($_POST['seguro_hasta'] ?? $micro_editar['seguro_hasta'] ?? '') ?>">
             </div>
-            <div class="col-md-3">
-                <label>Mantenciones al día</label><br>
-                <input type="checkbox" name="mantenciones_al_dia" <?= (!empty($micro_editar['mantenciones_al_dia'])) ? 'checked' : '' ?>>
+            <div class="col-md-3 d-flex align-items-center">
+                <!-- hidden para enviar siempre valor -->
+                <input type="hidden" name="mantenciones_al_dia" value="0">
+                <input type="checkbox" name="mantenciones_al_dia" id="mantenciones_al_dia" value="1" class="form-check-input"
+                    <?= (($_POST['mantenciones_al_dia'] ?? $micro_editar['mantenciones_al_dia'] ?? false) ? 'checked' : '') ?>>
+                <label for="mantenciones_al_dia" class="ms-2 mb-0">Mantenciones al día</label>
             </div>
         </div>
 
@@ -277,15 +352,15 @@ $rutas = obtenerRutas($pdo);
         <?php endif; ?>
     </form>
 
-    <!-- Tabla de micros -->
-    <table class="table table-bordered">
-        <thead>
+    <table class="table table-bordered table-hover">
+        <thead class="table-primary text-center">
             <tr>
                 <th>ID</th>
                 <th>Patente</th>
                 <th>Permiso Desde</th>
                 <th>Permiso Hasta</th>
-                <th>Revisión Técnica</th>
+                <th>Revisión Desde</th>
+                <th>Revisión Hasta</th>
                 <th>Ruta</th>
                 <th>Padrón</th>
                 <th>Herramientas</th>
@@ -297,28 +372,51 @@ $rutas = obtenerRutas($pdo);
             </tr>
         </thead>
         <tbody>
-            <?php foreach ($micros as $m): ?>
-                <tr>
-                    <td><?= $m['id'] ?></td>
-                    <td><?= htmlspecialchars($m['patente']) ?></td>
-                    <td><?= htmlspecialchars($m['permiso_desde']) ?></td>
-                    <td><?= htmlspecialchars($m['permiso_hasta']) ?></td>
-                    <td><?= htmlspecialchars($m['revision']) ?></td>
-                    <td><?= htmlspecialchars($m['ruta_nombre']) ?></td>
-                    <td><?= htmlspecialchars($m['padron']) ?></td>
-                    <td><?= $m['herramientas'] ? 'Sí' : 'No' ?></td>
-                    <td><?= htmlspecialchars($m['folio_seguro']) ?></td>
-                    <td><?= htmlspecialchars($m['seguro_desde']) ?></td>
-                    <td><?= htmlspecialchars($m['seguro_hasta']) ?></td>
-                    <td><?= $m['mantenciones_al_dia'] ? 'Sí' : 'No' ?></td>
-                    <td>
-                        <a href="?editar=<?= $m['id'] ?>" class="btn btn-sm btn-warning">Editar</a>
-                        <a href="?eliminar=<?= $m['id'] ?>" onclick="return confirm('¿Eliminar este micro?');" class="btn btn-sm btn-danger">Eliminar</a>
-                    </td>
-                </tr>
-            <?php endforeach; ?>
+        <?php foreach ($micros as $m): ?>
+            <tr <?= (!$m['herramientas'] ? 'class="no-marcado"' : '') ?>>
+                <td class="text-center"><?= $m['id'] ?></td>
+                <td><?= htmlspecialchars($m['patente']) ?></td>
+                <td class="text-center"><?= formatoFecha($m['permiso_desde']) ?></td>
+                <td class="text-center"><?= formatoFecha($m['permiso_hasta']) ?></td>
+                <td class="text-center"><?= formatoFecha($m['revision_desde']) ?></td>
+                <td class="text-center"><?= formatoFecha($m['revision_hasta']) ?></td>
+                <td><?= htmlspecialchars($m['ruta_nombre']) ?></td>
+                <td><?= htmlspecialchars($m['padron']) ?></td>
+                <td class="text-center">
+                    <?= $m['herramientas'] ? 'Sí' : '<span class="text-danger fw-bold">No</span>' ?>
+                </td>
+                <td><?= htmlspecialchars($m['folio_seguro']) ?></td>
+                <td class="text-center"><?= formatoFecha($m['seguro_desde']) ?></td>
+                <td class="text-center"><?= formatoFecha($m['seguro_hasta']) ?></td>
+                <td class="text-center">
+                    <?= $m['mantenciones_al_dia'] ? 'Sí' : '<span class="text-danger fw-bold">No</span>' ?>
+                </td>
+                <td class="text-center">
+                    <a href="?editar=<?= $m['id'] ?>" class="btn btn-sm btn-warning">Editar</a>
+                    <a href="?eliminar=<?= $m['id'] ?>" onclick="return confirm('¿Seguro que desea eliminar este micro?')" class="btn btn-sm btn-danger">Eliminar</a>
+                </td>
+            </tr>
+        <?php endforeach; ?>
         </tbody>
     </table>
 </div>
+
+<script>
+document.getElementById('form-micro').addEventListener('submit', function(event) {
+    let herramientas = document.getElementById('herramientas').checked;
+    let mantenciones = document.getElementById('mantenciones_al_dia').checked;
+
+    if (!herramientas || !mantenciones) {
+        let mensaje = "Las siguientes opciones no están marcadas:\n";
+        if (!herramientas) mensaje += "- Herramientas\n";
+        if (!mantenciones) mensaje += "- Mantenciones al día\n";
+        mensaje += "\n¿Seguro que desea continuar sin marcarlas?";
+        if (!confirm(mensaje)) {
+            event.preventDefault();
+        }
+    }
+});
+</script>
+
 </body>
 </html>
