@@ -230,7 +230,7 @@ $rutas = $pdo->query("SELECT id, nombre FROM ruta ORDER BY nombre")->fetchAll();
 <body class="bg-light">
 <div class="container py-4">
 
-    <button type="button" class="btn btn-primary mb-3" onclick="history.back()">Volver</button>
+    <button type="button" class="btn btn-primary mb-3" onclick="window.location.href='home.php'">Volver</button>
 
     <h2 class="mb-4">Registro de Mantenimientos</h2>
 
@@ -370,122 +370,106 @@ $rutas = $pdo->query("SELECT id, nombre FROM ruta ORDER BY nombre")->fetchAll();
 </div>
 
 <script>
-function actualizarCampos() {
-    const tipo = document.getElementById('tipo').value;
-    const kmGroup = document.getElementById('kilometraje_group');
-    const descripcion = document.getElementById('descripcion');
-    const errorDesc = document.getElementById('errorDescripcion');
-
-    if (tipo === 'cambio_aceite') {
-        kmGroup.style.display = 'block';
-        descripcion.placeholder = 'Ingrese a qué kilometraje se debe realizar el siguiente cambio.';
-    } else {
-        kmGroup.style.display = 'none';
-        descripcion.placeholder = 'Escribe algo extra aquí sobre las mantenciones realizadas.';
-    }
-
-    errorDesc.style.display = 'none';
-}
-
-function validarDescripcion() {
-    const tipo = document.getElementById('tipo').value;
-    const descripcion = document.getElementById('descripcion');
-    const km = document.getElementById('kilometraje').value;
-    const errorDesc = document.getElementById('errorDescripcion');
-    errorDesc.style.display = 'none';
-
-    if (tipo === 'cambio_aceite') {
-        if (descripcion.value.trim() === '') {
-            errorDesc.textContent = 'La descripción no puede estar vacía.';
-            errorDesc.style.display = 'block';
-            return false;
-        }
-        if (isNaN(descripcion.value)) {
-            errorDesc.textContent = 'La descripción debe ser un número indicando el kilometraje.';
-            errorDesc.style.display = 'block';
-            return false;
-        }
-        if (parseFloat(descripcion.value) < parseFloat(km)) {
-            errorDesc.textContent = 'El kilometraje para próximo cambio no puede ser menor al actual.';
-            errorDesc.style.display = 'block';
-            return false;
-        }
-        if (parseFloat(descripcion.value) > parseFloat(km) + 10000) {
-            errorDesc.textContent = 'El kilometraje para próximo cambio no puede exceder en más de 10.000 km el actual.';
-            errorDesc.style.display = 'block';
-            return false;
+    function actualizarCampos() {
+        const tipo = document.getElementById('tipo').value;
+        const kmGroup = document.getElementById('kilometraje_group');
+        const descripcion = document.getElementById('descripcion');
+        if (tipo === 'cambio_aceite') {
+            kmGroup.style.display = 'block';
+            descripcion.placeholder = 'Ingrese a qué kilometraje se debe realizar el siguiente cambio.';
+        } else {
+            kmGroup.style.display = 'none';
+            descripcion.placeholder = 'Escribe algo extra aquí sobre las mantenciones realizadas.';
         }
     }
-    return true;
-}
 
-function validarFormulario() {
-    const patente = document.getElementById('patente').value.trim();
-    const tipo = document.getElementById('tipo').value;
-    const fechaIngreso = document.getElementById('fecha_ingreso').value;
-    const fechaSalida = document.getElementById('fecha_salida').value;
-    const ruta = document.getElementById('ruta_id').value;
+    function validarDescripcion() {
+        const tipo = document.getElementById('tipo').value;
+        const descripcion = document.getElementById('descripcion').value.trim();
+        const km = document.getElementById('kilometraje').value.trim();
+        const errorDesc = document.getElementById('errorDescripcion');
 
-    if (!patente || !tipo || !fechaIngreso || !fechaSalida || !ruta) {
-        alert('Por favor complete todos los campos obligatorios.');
-        return false;
+        if (tipo === 'cambio_aceite') {
+            if (descripcion === '') {
+                errorDesc.style.display = 'block';
+                errorDesc.textContent = 'Debe ingresar el kilometraje para el próximo cambio.';
+                return false;
+            }
+            if (isNaN(descripcion)) {
+                errorDesc.style.display = 'block';
+                errorDesc.textContent = 'La descripción debe ser un número indicando el kilometraje.';
+                return false;
+            }
+            if (km === '') {
+                errorDesc.style.display = 'block';
+                errorDesc.textContent = 'Debe ingresar el kilometraje actual.';
+                return false;
+            }
+            if (Number(descripcion) < Number(km)) {
+                errorDesc.style.display = 'block';
+                errorDesc.textContent = 'El kilometraje para próximo cambio no puede ser menor al kilometraje actual.';
+                return false;
+            }
+            if (Number(descripcion) > Number(km) + 10000) {
+                errorDesc.style.display = 'block';
+                errorDesc.textContent = 'El kilometraje para próximo cambio no puede exceder en más de 10.000 km el actual.';
+                return false;
+            }
+            errorDesc.style.display = 'none';
+            return true;
+        }
+        errorDesc.style.display = 'none';
+        return true;
     }
 
-    const hoy = new Date();
-    const fechaIng = new Date(fechaIngreso);
-    const fechaSal = new Date(fechaSalida);
-
-    if (fechaIng > hoy) {
-        alert('La fecha de ingreso no puede ser mayor al día actual.');
-        return false;
+    function validarFormulario() {
+        const tipo = document.getElementById('tipo').value;
+        if (tipo === '') {
+            alert('Debe seleccionar un tipo de mantenimiento.');
+            return false;
+        }
+        return validarDescripcion();
     }
 
-    if (fechaSal < fechaIng) {
-        alert('La fecha de salida no puede ser menor que la fecha de ingreso.');
-        return false;
-    }
+    // Edición
+    const btnEdit = document.getElementById('btn-edit');
+    const btnAdd = document.getElementById('btn-add');
+    const btnCancel = document.getElementById('btn-cancel');
 
-    if ((fechaSal - fechaIng) / (1000 * 60 * 60 * 24) > 7) {
-        alert('La fecha de salida no puede superar una semana desde la fecha de ingreso.');
-        return false;
-    }
+    document.querySelectorAll('.btn-edit').forEach(button => {
+        button.addEventListener('click', () => {
+            const info = JSON.parse(button.getAttribute('data-info'));
+            document.getElementById('id').value = info.id;
+            document.getElementById('patente').value = info.patente;
+            document.getElementById('ruta_id').value = info.ruta_id;
+            document.getElementById('tipo').value = info.tipo;
+            document.getElementById('descripcion').value = info.descripcion;
+            document.getElementById('fecha_ingreso').value = info.fecha_ingreso;
+            document.getElementById('fecha_salida').value = info.fecha_salida;
+            document.getElementById('kilometraje').value = info.kilometraje || '';
+            document.getElementById('confirmado').checked = info.confirmado === '1' || info.confirmado === 1;
 
-    return validarDescripcion();
-}
+            actualizarCampos();
 
-document.querySelectorAll('.btn-edit').forEach(button => {
-    button.addEventListener('click', () => {
-        const data = JSON.parse(button.getAttribute('data-info'));
+            btnAdd.style.display = 'none';
+            btnEdit.style.display = 'inline-block';
+            btnCancel.style.display = 'inline-block';
 
-        document.getElementById('id').value = data.id;
-        document.getElementById('patente').value = data.patente;
-        document.getElementById('ruta_id').value = data.ruta_id;
-        document.getElementById('tipo').value = data.tipo;
-        actualizarCampos();
-        document.getElementById('descripcion').value = data.descripcion;
-        document.getElementById('fecha_ingreso').value = data.fecha_ingreso;
-        document.getElementById('fecha_salida').value = data.fecha_salida;
-        document.getElementById('kilometraje').value = data.kilometraje || '';
-        document.getElementById('confirmado').checked = data.confirmado === '1';
-
-        document.getElementById('btn-add').style.display = 'none';
-        document.getElementById('btn-edit').style.display = 'inline-block';
-        document.getElementById('btn-cancel').style.display = 'inline-block';
-
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+            window.scrollTo(0, 0);
+        });
     });
-});
 
-document.getElementById('btn-cancel').addEventListener('click', () => {
-    document.getElementById('form-mantenimiento').reset();
-    document.getElementById('id').value = '';
-    document.getElementById('btn-add').style.display = 'inline-block';
-    document.getElementById('btn-edit').style.display = 'none';
-    document.getElementById('btn-cancel').style.display = 'none';
+    btnCancel.addEventListener('click', () => {
+        document.getElementById('form-mantenimiento').reset();
+        document.getElementById('id').value = '';
+        actualizarCampos();
+        btnAdd.style.display = 'inline-block';
+        btnEdit.style.display = 'none';
+        btnCancel.style.display = 'none';
+    });
+
+    // Actualizar campos al cargar la página
     actualizarCampos();
-});
-actualizarCampos();
 </script>
-
 </body>
 </html>
