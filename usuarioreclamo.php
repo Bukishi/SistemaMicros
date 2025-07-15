@@ -122,6 +122,7 @@ $reclamos = $mis_reclamos->fetchAll();
 </head>
 <body class="bg-light">
 
+<!-- Aquí el botón Volver fijo a home.php -->
 <button onclick="location.href='home.php'" class="btn btn-primary m-3">Volver</button>
 
 <div class="container py-4">
