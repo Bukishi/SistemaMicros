@@ -6,6 +6,22 @@ if (!isset($_SESSION['usuario_id'])) {
     exit;
 }
 
+// Función para validar nombre/apellido: no vacíos, sin números
+function validarNombreApellido($texto) {
+    return !empty($texto) && !preg_match('/[0-9]/', $texto);
+}
+
+// Variables para rellenar formulario en caso de error o edición
+$valores = [
+    'nombre' => '',
+    'apellido' => '',
+    'correo' => '',
+    'licencia' => false,
+    'examen_corma' => false,
+];
+
+$errores = [];
+
 // EDITAR CHOFER - mostrar formulario con datos
 if (isset($_GET['editar_id'])) {
     $editar_id = $_GET['editar_id'];
@@ -18,39 +34,80 @@ if (isset($_GET['editar_id'])) {
     if (!$choferEditar) {
         echo "<div class='alert alert-danger'>Chofer no encontrado.</div>";
         unset($choferEditar);
+    } else {
+        // Rellenar valores para edición
+        $valores['nombre'] = $choferEditar['nombre'];
+        $valores['apellido'] = $choferEditar['apellido'];
+        $valores['correo'] = $choferEditar['correo'];
+        $valores['licencia'] = ($choferEditar['licencia'] === 'A4');
+        $valores['examen_corma'] = (bool)$choferEditar['examen_corma'];
     }
 }
 
 // ACTUALIZAR CHOFER
 if (isset($_POST['update'])) {
     $id           = $_POST['id'];
-    $nombre       = $_POST['nombre'];
-    $apellido     = $_POST['apellido'];
-    $correo       = $_POST['correo'];
-    $licencia     = isset($_POST['licencia']) ? 'A4' : '';
-    $examen_corma = isset($_POST['examen_corma']) ? 1 : 0;
+    $nombre       = trim($_POST['nombre']);
+    $apellido     = trim($_POST['apellido']);
+    $correo       = trim($_POST['correo']);
+    $licencia     = isset($_POST['licencia']) ? true : false;
+    $examen_corma = isset($_POST['examen_corma']) ? true : false;
 
-    $stmt = $pdo->prepare("SELECT usuario_id FROM chofer WHERE id = ?");
-    $stmt->execute([$id]);
-    $usuarioIdRow = $stmt->fetch(PDO::FETCH_ASSOC);
+    // Rellenar para mantener datos si hay error
+    $valores = [
+        'nombre' => $nombre,
+        'apellido' => $apellido,
+        'correo' => $correo,
+        'licencia' => $licencia,
+        'examen_corma' => $examen_corma,
+    ];
 
-    if ($usuarioIdRow) {
-        $usuario_id = $usuarioIdRow['usuario_id'];
+    // Validaciones
+    if (!validarNombreApellido($nombre)) {
+        $errores[] = "El nombre no puede estar vacío ni contener números.";
+    }
+    if (!validarNombreApellido($apellido)) {
+        $errores[] = "El apellido no puede estar vacío ni contener números.";
+    }
+    if (!$licencia) {
+        $errores[] = "❌ El chofer debe tener licencia A4 para poder guardar.";
+    }
 
-        $stmtUpdUser = $pdo->prepare("UPDATE usuario SET nombre = ?, apellido = ?, correo = ? WHERE id = ?");
-        try {
-            $stmtUpdUser->execute([$nombre, $apellido, $correo, $usuario_id]);
+    if (empty($errores)) {
+        $stmt = $pdo->prepare("SELECT usuario_id FROM chofer WHERE id = ?");
+        $stmt->execute([$id]);
+        $usuarioIdRow = $stmt->fetch(PDO::FETCH_ASSOC);
 
+        if ($usuarioIdRow) {
+            $usuario_id = $usuarioIdRow['usuario_id'];
+
+            $stmtUpdUser = $pdo->prepare("UPDATE usuario SET nombre = ?, apellido = ?, correo = ? WHERE id = ?");
             $stmtUpdChofer = $pdo->prepare("UPDATE chofer SET nombre = ?, apellido = ?, licencia = ?, examen_corma = ? WHERE id = ?");
-            $stmtUpdChofer->execute([$nombre, $apellido, $licencia, $examen_corma, $id]);
+            try {
+                $stmtUpdUser->execute([$nombre, $apellido, $correo, $usuario_id]);
+                $licencia_val = $licencia ? 'A4' : '';
+                $examen_corma_val = $examen_corma ? 1 : 0;
+                $stmtUpdChofer->execute([$nombre, $apellido, $licencia_val, $examen_corma_val, $id]);
 
-            header('Location: ' . basename($_SERVER['PHP_SELF']));
-            exit;
-        } catch (PDOException $e) {
-            if ($e->getCode() == '23505') {
-                echo "<div class='alert alert-danger'>El correo '$correo' ya está registrado. Por favor usa otro.</div>";
-            } else {
-                echo "<div class='alert alert-danger'>Error actualizando usuario: " . $e->getMessage() . "</div>";
+                // Vaciar formulario si exitoso
+                $valores = [
+                    'nombre' => '',
+                    'apellido' => '',
+                    'correo' => '',
+                    'licencia' => false,
+                    'examen_corma' => false,
+                ];
+
+                echo "<div class='alert alert-success'>Chofer actualizado correctamente.</div>";
+                // Para evitar que el formulario con datos editados siga mostrando, redirigir
+                header('Location: ' . basename($_SERVER['PHP_SELF']));
+                exit;
+            } catch (PDOException $e) {
+                if ($e->getCode() == '23505') {
+                    $errores[] = "El correo '$correo' ya está registrado. Por favor usa otro.";
+                } else {
+                    $errores[] = "Ocurrió un error: " . $e->getMessage();
+                }
             }
         }
     }
@@ -58,31 +115,64 @@ if (isset($_POST['update'])) {
 
 // AÑADIR CHOFER
 if (isset($_POST['add'])) {
-    $nombre      = $_POST['nombre'];
-    $apellido    = $_POST['apellido'];
-    $correo      = $_POST['correo'];
-    $contraseña  = password_hash($_POST['contraseña'], PASSWORD_DEFAULT);
-    $licencia    = isset($_POST['licencia']) ? 'A4' : '';
+    $nombre      = trim($_POST['nombre']);
+    $apellido    = trim($_POST['apellido']);
+    $correo      = trim($_POST['correo']);
+    $contraseña  = $_POST['contraseña'];
+    $licencia    = isset($_POST['licencia']) ? true : false;
     $examen_corma= isset($_POST['examen_corma']) ? true : false;
     $rol         = 'chofer';
 
-    if ($licencia !== 'A4') {
-        echo "<div class='alert alert-danger'>❌ No se puede registrar el chofer porque no cuenta con licencia A4.</div>";
-    } else {
+    // Guardar valores para no perderlos si hay error
+    $valores = [
+        'nombre' => $nombre,
+        'apellido' => $apellido,
+        'correo' => $correo,
+        'licencia' => $licencia,
+        'examen_corma' => $examen_corma,
+    ];
+
+    // Validaciones
+    if (!validarNombreApellido($nombre)) {
+        $errores[] = "El nombre no puede estar vacío ni contener números.";
+    }
+    if (!validarNombreApellido($apellido)) {
+        $errores[] = "El apellido no puede estar vacío ni contener números.";
+    }
+    if (!$licencia) {
+        $errores[] = "❌ No se puede registrar el chofer porque no cuenta con licencia A4.";
+    }
+
+    if (empty($errores)) {
         try {
+            $hash_contraseña = password_hash($contraseña, PASSWORD_DEFAULT);
             $stmt = $pdo->prepare("INSERT INTO usuario (nombre, apellido, correo, contraseña, rol) VALUES (?, ?, ?, ?, ?)");
-            $stmt->execute([$nombre, $apellido, $correo, $contraseña, $rol]);
+            $stmt->execute([$nombre, $apellido, $correo, $hash_contraseña, $rol]);
             $usuario_id = $pdo->lastInsertId();
 
+            $licencia_val = $licencia ? 'A4' : '';
+            $examen_corma_val = $examen_corma ? 1 : 0;
+
             $stmt2 = $pdo->prepare("INSERT INTO chofer (nombre, apellido, usuario_id, licencia, examen_corma) VALUES (?, ?, ?, ?, ?)");
-            $stmt2->execute([$nombre, $apellido, $usuario_id, $licencia, $examen_corma]);
+            $stmt2->execute([$nombre, $apellido, $usuario_id, $licencia_val, $examen_corma_val]);
+
+            // Vaciar formulario si éxito
+            $valores = [
+                'nombre' => '',
+                'apellido' => '',
+                'correo' => '',
+                'licencia' => false,
+                'examen_corma' => false,
+            ];
+
             echo "<div class='alert alert-success'>Chofer registrado correctamente.</div>";
         } catch (PDOException $e) {
             if ($e->getCode() == '23505') {
-                echo "<div class='alert alert-danger'>El correo '$correo' ya está registrado. Por favor usa otro.</div>";
+                $errores[] = "El correo '$correo' ya está registrado. Por favor usa otro.";
             } else {
-                echo "<div class='alert alert-danger'>Ocurrió un error: " . $e->getMessage() . "</div>";
+                $errores[] = "Ocurrió un error: " . $e->getMessage();
             }
+            // NO vaciar datos aquí para que se mantengan
         }
     }
 }
@@ -99,6 +189,7 @@ if (isset($_POST['delete'])) {
         $pdo->prepare("DELETE FROM horario WHERE chofer_id = ?")->execute([$chofer_id]);
         $pdo->prepare("DELETE FROM chofer WHERE id = ?")->execute([$chofer_id]);
         $pdo->prepare("DELETE FROM usuario WHERE id = ?")->execute([$usuario_id]);
+        echo "<div class='alert alert-success'>Chofer eliminado correctamente.</div>";
     }
 }
 
@@ -108,12 +199,7 @@ $rutas    = $pdo->query("SELECT id, nombre FROM ruta")->fetchAll();
 $choferes = $pdo->query("SELECT c.id, c.nombre, c.apellido, c.licencia, c.examen_corma, u.correo, c.usuario_id 
                           FROM chofer c
                           JOIN usuario u ON c.usuario_id = u.id")->fetchAll();
-$horarios = $pdo->query("SELECT h.id, c.nombre AS chofer_nombre, c.apellido AS chofer_apellido, h.hora_inicio, h.hora_fin, h.fecha, m.patente AS micro_patente, r.nombre AS ruta_nombre
-                         FROM horario h
-                         JOIN chofer c ON h.chofer_id = c.id
-                         JOIN ruta r ON h.ruta_id = r.id
-                         LEFT JOIN asignacion_micro am ON am.chofer_id = h.chofer_id AND DATE(am.fecha) = DATE(h.fecha)
-                         LEFT JOIN micro m ON am.micro_id = m.id")->fetchAll();
+
 ?>
 
 <!DOCTYPE html>
@@ -122,12 +208,10 @@ $horarios = $pdo->query("SELECT h.id, c.nombre AS chofer_nombre, c.apellido AS c
     <meta charset="UTF-8" />
     <title>Gestión de Choferes</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
     <style>
         .no-circular {
             background-color: #f8d7da !important; /* rojo claro */
         }
-        /* Checkbox un poquito más grandes y borde un poco más grueso */
         input[type="checkbox"] {
             width: 18px;
             height: 18px;
@@ -145,13 +229,31 @@ $horarios = $pdo->query("SELECT h.id, c.nombre AS chofer_nombre, c.apellido AS c
         button:hover {
             background-color: rgb(42, 158, 235);
         }
+        .btn-volver {
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            background-color: rgb(37, 95, 241);
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+            padding: 6px 12px;
+            font-weight: 600;
+            cursor: pointer;
+            z-index: 9999;
+            text-decoration: none;
+        }
+        .btn-volver:hover {
+            background-color: rgb(42, 158, 235);
+            color: #fff;
+            text-decoration: none;
+        }
     </style>
 
     <script>
-        // Confirmación al editar si licencia o examen CORMA están desmarcados
         function confirmarEdicion(event) {
-            const licencia = document.getElementById('licenciaCheckEdit').checked;
-            const corma = document.getElementById('cormaCheckEdit').checked;
+            const licencia = document.getElementById('licenciaCheckEdit')?.checked;
+            const corma = document.getElementById('cormaCheckEdit')?.checked;
 
             if (!licencia || !corma) {
                 let mensaje = 'Este chofer ';
@@ -174,8 +276,22 @@ $horarios = $pdo->query("SELECT h.id, c.nombre AS chofer_nombre, c.apellido AS c
     </script>
 </head>
 <body class="bg-light">
+
+<a href="javascript:history.back()" class="btn-volver">Volver</a>
+
 <div class="container py-5">
     <h2 class="text-center mb-4">Gestión de Choferes</h2>
+
+    <!-- Mostrar errores -->
+    <?php if (!empty($errores)): ?>
+        <div class="alert alert-danger">
+            <ul class="mb-0">
+                <?php foreach($errores as $error): ?>
+                <li><?= htmlspecialchars($error) ?></li>
+                <?php endforeach; ?>
+            </ul>
+        </div>
+    <?php endif; ?>
 
     <!-- Tabla de Choferes -->
     <table class="table table-bordered table-hover">
@@ -216,25 +332,30 @@ $horarios = $pdo->query("SELECT h.id, c.nombre AS chofer_nombre, c.apellido AS c
         <h3 class="text-center mt-5">Editar Chofer</h3>
         <form method="POST" class="mx-auto" style="max-width: 400px;" onsubmit="return confirmarEdicion(event)">
             <input type="hidden" name="id" value="<?= $choferEditar['id'] ?>" />
-            <input type="text" name="nombre" class="form-control mb-2" required value="<?= htmlspecialchars($choferEditar['nombre']) ?>" />
-            <input type="text" name="apellido" class="form-control mb-2" required value="<?= htmlspecialchars($choferEditar['apellido']) ?>" />
-            <input type="email" name="correo" class="form-control mb-2" required value="<?= htmlspecialchars($choferEditar['correo']) ?>" />
+            <input type="text" name="nombre" class="form-control mb-2" required
+                   value="<?= htmlspecialchars($valores['nombre']) ?>" />
+            <input type="text" name="apellido" class="form-control mb-2" required
+                   value="<?= htmlspecialchars($valores['apellido']) ?>" />
+            <input type="email" name="correo" class="form-control mb-2" required
+                   value="<?= htmlspecialchars($valores['correo']) ?>" />
 
             <div class="form-check mb-2">
-                <input type="checkbox" name="licencia" id="licenciaCheckEdit" class="form-check-input" <?= $choferEditar['licencia'] === 'A4' ? 'checked' : '' ?> />
+                <input type="checkbox" name="licencia" id="licenciaCheckEdit" class="form-check-input"
+                    <?= $valores['licencia'] ? 'checked' : '' ?> />
                 <label for="licenciaCheckEdit" class="form-check-label">Licencia A4</label>
             </div>
 
-            <?php if ($choferEditar['licencia'] !== 'A4'): ?>
+            <?php if (!$valores['licencia']): ?>
                 <div class="alert alert-warning">⚠ Este chofer no puede circular porque no tiene licencia A4.</div>
             <?php endif; ?>
 
             <div class="form-check mb-2">
-                <input type="checkbox" name="examen_corma" id="cormaCheckEdit" class="form-check-input" <?= $choferEditar['examen_corma'] ? 'checked' : '' ?> />
+                <input type="checkbox" name="examen_corma" id="cormaCheckEdit" class="form-check-input"
+                    <?= $valores['examen_corma'] ? 'checked' : '' ?> />
                 <label for="cormaCheckEdit" class="form-check-label">Aprobó examen CORMA</label>
             </div>
 
-            <?php if (!$choferEditar['examen_corma']): ?>
+            <?php if (!$valores['examen_corma']): ?>
                 <div class="alert alert-warning">⚠ Este chofer no puede circular porque no aprobó el examen CORMA.</div>
             <?php endif; ?>
 
@@ -244,18 +365,23 @@ $horarios = $pdo->query("SELECT h.id, c.nombre AS chofer_nombre, c.apellido AS c
     <?php else: ?>
         <h3 class="text-center mt-5">Agregar Nuevo Chofer</h3>
         <form method="POST" class="mx-auto" style="max-width: 400px;">
-            <input type="text" name="nombre" class="form-control mb-2" required placeholder="Nombre" />
-            <input type="text" name="apellido" class="form-control mb-2" required placeholder="Apellido" />
-            <input type="email" name="correo" class="form-control mb-2" required placeholder="Correo" />
+            <input type="text" name="nombre" class="form-control mb-2" required placeholder="Nombre"
+                value="<?= htmlspecialchars($valores['nombre']) ?>" />
+            <input type="text" name="apellido" class="form-control mb-2" required placeholder="Apellido"
+                value="<?= htmlspecialchars($valores['apellido']) ?>" />
+            <input type="email" name="correo" class="form-control mb-2" required placeholder="Correo"
+                value="<?= htmlspecialchars($valores['correo']) ?>" />
             <input type="password" name="contraseña" class="form-control mb-2" required placeholder="Contraseña" />
 
             <div class="form-check mb-2">
-                <input type="checkbox" name="licencia" id="licenciaCheckAdd" class="form-check-input" />
+                <input type="checkbox" name="licencia" id="licenciaCheckAdd" class="form-check-input"
+                    <?= $valores['licencia'] ? 'checked' : '' ?> />
                 <label for="licenciaCheckAdd" class="form-check-label">Licencia A4</label>
             </div>
 
             <div class="form-check mb-2">
-                <input type="checkbox" name="examen_corma" id="cormaCheckAdd" class="form-check-input" />
+                <input type="checkbox" name="examen_corma" id="cormaCheckAdd" class="form-check-input"
+                    <?= $valores['examen_corma'] ? 'checked' : '' ?> />
                 <label for="cormaCheckAdd" class="form-check-label">Aprobó examen CORMA</label>
             </div>
 
@@ -263,33 +389,6 @@ $horarios = $pdo->query("SELECT h.id, c.nombre AS chofer_nombre, c.apellido AS c
         </form>
     <?php endif; ?>
 
-    <hr class="my-5" />
-
-    <h3 class="text-center mb-4">Horarios de Choferes</h3>
-    <table class="table table-bordered table-hover">
-        <thead class="table-primary text-center">
-            <tr>
-                <th>Chofer</th>
-                <th>Patente Micro</th>
-                <th>Ruta</th>
-                <th>Fecha</th>
-                <th>Hora Inicio</th>
-                <th>Hora Fin</th>
-            </tr>
-        </thead>
-        <tbody>
-            <?php foreach ($horarios as $horario): ?>
-            <tr>
-                <td><?= htmlspecialchars($horario['chofer_nombre'] . ' ' . $horario['chofer_apellido']) ?></td>
-                <td><?= htmlspecialchars($horario['micro_patente'] ?? '-') ?></td>
-                <td><?= htmlspecialchars($horario['ruta_nombre']) ?></td>
-                <td><?= date('d-m-Y', strtotime($horario['fecha'])) ?></td>
-                <td><?= htmlspecialchars($horario['hora_inicio']) ?></td>
-                <td><?= htmlspecialchars($horario['hora_fin']) ?></td>
-            </tr>
-            <?php endforeach; ?>
-        </tbody>
-    </table>
 </div>
 </body>
 </html>
