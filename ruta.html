@@ -9,273 +9,217 @@
   <style>
     #map { height: 600px; }
     .form-container { margin: 1rem 0; }
-  .paradero-icono {
-  font-size: 18px;
-  text-align: center;
-  line-height: 24px;
-}
+    .paradero-icono {
+      font-size: 18px;
+      text-align: center;
+      line-height: 24px;
+    }
+
+    .contenedor {
+      display: flex;         /* Activa Flexbox */
+      gap: 40px;             /* Espacio entre los elementos */
+    }
   </style>
 </head>
 <body>
-  <h2>Crear Ruta</h2>
-
-  <div class="form-container">
-    <label>Nombre de la Ruta: <input type="text" id="nombreRuta"></label>
-    <label>Color: <input type="color" id="colorRuta" value="#ff0000"></label>
+  <button type="button" onclick="location.href='home.php'">Volver</button>
+  <div class="contenedor">
+    <div class="form-container">
+      <h2>Crear Ruta</h2>
+      <!-- 1 SOLO BOTÓN: el envío del formulario activa validación y guardado -->
+      <form id="formRuta">
+        <input type="text" id="nombreRuta" name="nombreRuta" placeholder="Nombre de la ruta">
+        <label>Color: <input type="color" id="colorRuta" name="colorRuta" value="#ff0000"></label>
+        <button type="submit">Guardar Ruta</button>
+      </form>
+    </div>
+    <div class="form-container">
+      <h2>Rutas registradas</h2>
+      <select id="selectorRuta">
+        <option value="">-- Selecciona una ruta --</option>
+      </select>
+      <button onclick="eliminarRutaSeleccionada()">Eliminar</button>
+    </div>
   </div>
 
   <div id="map"></div>
-  <button onclick="guardarRuta()">Guardar Ruta</button>
-  <h2>Rutas registradas</h2>
-<select id="selectorRuta">
-  <option value="">-- Selecciona una ruta --</option>
-</select>
-<br>
-<button onclick="editarRutaSeleccionada()">Editar</button>
-<button onclick="eliminarRutaSeleccionada()">Eliminar</button>
 
+  <!-- Librerías Leaflet -->
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet-draw/dist/leaflet.draw.js"></script>
+
   <script>
-    document.addEventListener('DOMContentLoaded', () => {
-  cargarRutas();
-});
-    let map = L.map('map').setView([-40.574, -73.133], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-    fetch('rutas_con_coordenadas.php')
-  .then(res => res.json())
-  .then(rutas => {
-    rutas.forEach(ruta => {
-      const polyline = L.polyline(ruta.coordenadas, { color: ruta.color });
-
-      polyline.bindPopup(`<strong>${ruta.nombre}</strong><br>
-        <button onclick="activarEdicion(${ruta.id})">Editar esta ruta</button>
-      `);
-
-      polyline.rutaId = ruta.id;
-      polyline.rutaNombre = ruta.nombre;
-      polyline.rutaColor = ruta.color;
-
-      polyline.on('click', function () {
-        drawnItems.clearLayers();
-        drawnItems.addLayer(polyline);
-        puntosRuta = polyline.getLatLngs();
-        rutaEditandoId = ruta.id;
-        document.getElementById('nombreRuta').value = ruta.nombre;
-        document.getElementById('colorRuta').value = ruta.color;
-      });
-
-      polyline.addTo(map);
-    });
-
-  })
-  .catch(err => console.error('Error cargando rutas:', err));
-
-    let drawnItems = new L.FeatureGroup();
-    map.addLayer(drawnItems);
-
-    let drawControl = new L.Control.Draw({
-      draw: { polyline: true, polygon: false, marker: true, circle: false, rectangle: false, circlemarker:false },
-      edit: { featureGroup: drawnItems }
-    });
-    map.addControl(drawControl);
-
-    let puntosRuta = [];
-    let rutaEditandoId = null;
-    
-    map.on('draw:created', function (e) {
-      let layer = e.layer;
-      if (e.layerType === 'polyline') {
-        puntosRuta = layer.getLatLngs();
-        drawnItems.clearLayers();
-        drawnItems.addLayer(layer);
-
-        puntosRuta.forEach((p, i) => {
-          L.marker(p, { icon: L.divIcon({ className: 'numero', html: (i + 1) }) }).addTo(drawnItems);
-        });
-        
-      }if (e.layerType === 'marker') {
-    // Este es un PARADERO NUEVO
-    paraderosLayer.addLayer(layer);
-
-    // Mostrar popup o pedir nombre
-    const nombreParadero = prompt("Nombre del paradero:");
-    if (nombreParadero) {
-      layer.bindPopup(`<strong>Paradero:</strong> ${nombreParadero}`);
-    }
-  
-     // Puedes guardarlo o enviarlo al servidor
-    console.log("Paradero agregado en:", centro);
-    alert(`Paradero agregado en lat: ${centro.lat}, lng: ${centro.lng}`);
-
-    // Aquí podrías guardar en tu base de datos
-    // guardarParadero(centro.lat, centro.lng);
-  }
-});
-    function activarEdicion(id) {
-  const capa = drawnItems.getLayers()[0];
-  if (!capa) {
-    alert("Primero selecciona una ruta en el mapa.");
-    return;
-  }
-
-  const editToolbar = new L.EditToolbar.Edit(map, {
-    featureGroup: drawnItems
+  // --------------------------- CONFIGURACIÓN INICIAL --------------------------- //
+  document.addEventListener('DOMContentLoaded', () => {
+    cargarRutas();
   });
-  editToolbar.enable();
-}
-    function cargarRutas() {
-  fetch('listar_rutas.php')
+
+  const map = L.map('map').setView([-40.574, -73.133], 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+  const drawnItems     = new L.FeatureGroup();
+  const paraderosLayer = new L.FeatureGroup();
+  map.addLayer(drawnItems);
+  map.addLayer(paraderosLayer);
+
+  const drawControl = new L.Control.Draw({
+    draw: { polyline: true, polygon: false, marker: false, circle: false, rectangle: false, circlemarker:false },
+    edit: { featureGroup: drawnItems }
+  });
+  map.addControl(drawControl);
+
+  let puntosRuta     = [];
+  let rutaEditandoId = null;
+
+  // --------------------------- CARGAR RUTAS EXISTENTES --------------------------- //
+  fetch('rutas_con_coordenadas.php')
     .then(res => res.json())
     .then(rutas => {
-      const selector = document.getElementById('selectorRuta');
-      selector.innerHTML = '<option value="">-- Selecciona una ruta --</option>';
-
       rutas.forEach(ruta => {
-        const option = document.createElement('option');
-        option.value = ruta.id;
-        option.textContent = `${ruta.nombre} (${ruta.color})`;
-        selector.appendChild(option);
+        const polyline = L.polyline(ruta.coordenadas, { color: ruta.color });
+
+        polyline.bindPopup(`<strong>${ruta.nombre}</strong><br>
+          <button onclick="activarEdicion(${ruta.id})">Editar esta ruta</button>`);
+
+        polyline.on('click', function () {
+          drawnItems.clearLayers();
+          drawnItems.addLayer(polyline);
+          puntosRuta     = polyline.getLatLngs();
+          rutaEditandoId = ruta.id;
+          document.getElementById('nombreRuta').value = ruta.nombre;
+          document.getElementById('colorRuta').value  = ruta.color;
+        });
+
+        polyline.addTo(map);
       });
     })
     .catch(err => console.error('Error cargando rutas:', err));
-}
-function editarRutaSeleccionada() {
-  const id = document.getElementById('selectorRuta').value;
-  if (!id) {
-    alert('Selecciona una ruta para editar.');
-    return;
-  }
-  editarRuta(id);
-}
 
-function eliminarRutaSeleccionada() {
-  const id = document.getElementById('selectorRuta').value;
-  if (!id) {
-    alert('Selecciona una ruta para eliminar.');
-    return;
-  }
+  // --------------------------- EVENTOS DE DIBUJO --------------------------- //
+  map.on('draw:created', function (e) {
+    if (e.layerType === 'polyline') {
+      puntosRuta = e.layer.getLatLngs();
+      drawnItems.clearLayers();
+      drawnItems.addLayer(e.layer);
 
-  if (!confirm('¿Estás seguro de que deseas eliminar esta ruta?')) return;
+      // numerar puntos
+      puntosRuta.forEach((p, i) => {
+        L.marker(p, { icon: L.divIcon({ className: 'numero', html: (i + 1) }) }).addTo(drawnItems);
+      });
+    }
+  });
 
-  fetch('eliminar_ruta.php', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id })
-  })
-  .then(res => res.text())
-  .then(msg => {
-    alert(msg);
-    cargarRutas(); // Recargar el dropdown
-    document.getElementById('selectorRuta').value = '';
-  })
-  .catch(err => alert('Error al eliminar la ruta.'));
-}
+  // --------------------------- FORMULARIO: VALIDACIÓN Y GUARDADO --------------------------- //
+  document.getElementById('formRuta').addEventListener('submit', function(evt) {
+    evt.preventDefault(); // detenemos envío por defecto
 
-    function guardarRuta() {
-  let nombre = document.getElementById('nombreRuta').value;
-  let color = document.getElementById('colorRuta').value;
+    if (!validarNombreRuta()) return; // si falla, no sigue
 
-  if (!nombre || !color || drawnItems.getLayers().length === 0) {
-    alert('Completa todos los campos y dibuja una ruta.');
-    return;
+    guardarRuta(); // si pasa, guardamos
+  });
+
+  function validarNombreRuta() {
+    const nombre  = document.getElementById('nombreRuta').value.trim();
+    const patron  = /^[a-zA-Z0-9\sáéíóúÁÉÍÓÚñÑ]+$/;
+    const esValido = patron.test(nombre);
+
+    if (nombre === '' || !esValido) {
+      alert('Por favor, ingresa un nombre de ruta válido.');
+      return false;
+    }
+    return true;
   }
 
-  const capa = drawnItems.getLayers()[0];
-if (!capa) {
-  alert('No hay ruta cargada para guardar.');
-  return;
-}
+  // --------------------------- CRUD RUTAS --------------------------- //
+  function cargarRutas() {
+    fetch('listar_rutas.php')
+      .then(res => res.json())
+      .then(rutas => {
+        const selector = document.getElementById('selectorRuta');
+        selector.innerHTML = '<option value="">-- Selecciona una ruta --</option>';
+        rutas.forEach(ruta => {
+          const option    = document.createElement('option');
+          option.value    = ruta.id;
+          option.textContent = `${ruta.nombre}`;
+          selector.appendChild(option);
+        });
+      })
+      .catch(err => console.error('Error cargando rutas:', err));
+  }
 
-const nuevasCoordenadas = capa.getLatLngs();
-  
+  function eliminarRutaSeleccionada() {
+    const id = document.getElementById('selectorRuta').value;
+    if (!id) return alert('Selecciona una ruta para eliminar.');
 
-  const datos = {
-    id: rutaEditandoId,
-    nombre,
-    color,
-    coordenadas: nuevasCoordenadas
-  };
+    if (!confirm('¿Estás seguro de que deseas eliminar esta ruta?')) return;
 
-  const endpoint = rutaEditandoId ? 'editar_ruta.php' : 'guardar_ruta.php';
+    fetch('eliminar_ruta.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    })
+    .then(res => res.text())
+    .then(msg => {
+      alert(msg);
+      cargarRutas();
+      document.getElementById('selectorRuta').value = '';
+    })
+    .catch(() => alert('Error al eliminar la ruta.'));
+  }
 
-  fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(datos)
-  })
-  .then(res => res.text())
-  .then(msg => {
-    alert(msg);
-    cargarRutas();
-    rutaEditandoId = null;
-    drawnItems.clearLayers();
-    puntosRuta = [];
-    document.getElementById('nombreRuta').value = '';
-    document.getElementById('colorRuta').value = '';
-  })
-  .catch(err => alert('Error al guardar/editar la ruta.'));
-}
+  function guardarRuta() {
+    const nombre = document.getElementById('nombreRuta').value.trim();
+    const color  = document.getElementById('colorRuta').value;
 
-    
+    // Validaciones adicionales
+    if (drawnItems.getLayers().length === 0) return alert('Dibuja una ruta en el mapa antes de guardar.');
 
-function editarRuta(id) {
-  fetch(`obtener_ruta.php?id=${id}`)
-    .then(res => res.json())
-    .then(data => {
-      // Limpiar el mapa
+    const capa = drawnItems.getLayers()[0];
+    const nuevasCoordenadas = capa.getLatLngs();
+
+    const datos = {
+      id: rutaEditandoId,
+      nombre,
+      color,
+      coordenadas: nuevasCoordenadas
+    };
+
+    const endpoint = rutaEditandoId ? 'editar_ruta.php' : 'guardar_ruta.php';
+
+    fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    })
+    .then(res => res.text())
+    .then(msg => {
+      alert(msg);
+      cargarRutas();
+      // reset estado
+      rutaEditandoId = null;
       drawnItems.clearLayers();
       puntosRuta = [];
+      document.getElementById('formRuta').reset();
+    })
+    .catch(() => alert('Error al guardar/editar la ruta.'));
+  }
 
-      const poly = L.polyline(data.coordenadas, {
-        color: data.color,
-        editable: true // Para Leaflet.Editable (si lo usas)
-      }).addTo(drawnItems);
+  // --------------------------- FUNCIONES AUXILIARES --------------------------- //
+  function activarEdicion(id) {
+    if (drawnItems.getLayers().length === 0) return alert('Primero selecciona una ruta en el mapa.');
 
-      // Guardar referencia para edición posterior
-       document.getElementById('nombreRuta').value = data.nombre;
-    document.getElementById('colorRuta').value = data.color;
+    new L.EditToolbar.Edit(map, { featureGroup: drawnItems }).enable();
+  }
 
-    rutaEditandoId = id;
-
-      // Guardamos puntos iniciales
-      puntosRuta = poly.getLatLngs();
-
-      // Permitir edición usando Leaflet.draw
-      map.editControl = new L.EditToolbar.Edit(map, {
-        featureGroup: drawnItems
-      });
-
-      map.editControl.enable();
-    });
-}
+  // Cargar paraderos existentes (opcional)
   fetch('listar_paraderos.php')
-  .then(res => res.json())
-  .then(paraderos => {
-    paraderos.forEach(p => {
-      const marker = L.marker([p.lat, p.lng]).addTo(map);
-      marker.bindPopup(`<strong>${p.nombre}</strong><br>Ruta ID: ${p.ruta_id}`);
+    .then(res => res.json())
+    .then(paraderos => {
+      paraderos.forEach(p => {
+        const marker = L.marker([p.lat, p.lng]).addTo(map);
+        marker.bindPopup(`<strong>${p.nombre}</strong><br>Ruta ID: ${p.ruta_id}`);
+      });
     });
-  });
-  function guardarParaderos() {
-  const paraderos = [];
-  paraderosLayer.eachLayer(layer => {
-    const { lat, lng } = layer.getLatLng();
-    const nombre = layer.getPopup()?.getContent().replace('<strong>Paradero:</strong> ', '') || '';
-    paraderos.push({ nombre, lat, lng });
-  });
-
-  fetch('guardar_paraderos.php', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(paraderos)
-  })
-  .then(res => res.text())
-  .then(msg => alert(msg))
-  .catch(err => console.error(err));
-}
-
   </script>
-  
 </body>
 </html>

@@ -7,7 +7,9 @@ $data = json_decode(file_get_contents("php://input"), true);
 $nombre = $data['nombre'];
 $color = $data['color'];
 $coordenadas = $data['coordenadas'];
-
+if ($nombre === '' || !preg_match('/^[a-zA-Z0-9\sáéíóúÁÉÍÓÚñÑ]+$/', $nombre)) {
+    die("Nombre de ruta inválido. Debe contener texto legible.");
+}
 if (!isset($data['coordenadas'])) {
     http_response_code(400);
     exit("No se recibieron coordenadas.");

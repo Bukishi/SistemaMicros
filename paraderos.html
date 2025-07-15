@@ -11,6 +11,7 @@
   </style>
 </head>
 <body>
+  <button type="button" onclick="location.href='home.php'">Volver</button>
   <h2>Gestor de Paraderos</h2>
 
   <div id="map"></div>
@@ -26,11 +27,8 @@
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
     const paraderosMap = new Map(); // clave = ID, valor = marker
-
     const paraderosLayer = new L.FeatureGroup();
     map.addLayer(paraderosLayer);
-
-    
 
     const drawControl = new L.Control.Draw({
       draw: {
@@ -50,12 +48,20 @@
     map.on('draw:created', function (e) {
       if (e.layerType === 'marker') {
         const layer = e.layer;
-        const nombreParadero = prompt("Nombre del paradero:");
-        if (nombreParadero) {
-          layer.bindPopup(`<strong>Paradero:</strong> ${nombreParadero}`);
-          layer.nombreParadero = nombreParadero; // guardamos nombre como propiedad
-          paraderosLayer.addLayer(layer);
+        let nombreParadero = prompt("Nombre del paradero:");
+
+        // Validación del nombre
+        nombreParadero = nombreParadero ? nombreParadero.trim() : '';
+        const esValido = /^[a-zA-Z0-9\sáéíóúÁÉÍÓÚñÑ]+$/.test(nombreParadero);
+
+        if (!nombreParadero || !esValido) {
+          alert("Por favor, ingresa un nombre de paradero válido.");
+          return;
         }
+
+        layer.bindPopup(`<strong>Paradero:</strong> ${nombreParadero}`);
+        layer.nombreParadero = nombreParadero;
+        paraderosLayer.addLayer(layer);
       }
     });
 
@@ -79,83 +85,86 @@
 
     // Mostrar paraderos existentes
     fetch('listar_paraderos.php')
-  .then(res => res.json())
-  .then(paraderos => {
-    paraderos.forEach(p => {
-      const marker = L.marker([p.lat, p.lng], { draggable: false }).addTo(paraderosLayer);
-      marker.paraderoId = p.id;
+      .then(res => res.json())
+      .then(paraderos => {
+        paraderos.forEach(p => {
+          const marker = L.marker([p.lat, p.lng], { draggable: false }).addTo(paraderosLayer);
+          marker.paraderoId = p.id;
 
-      marker.bindPopup(`
-        <strong>${p.nombre}</strong><br>
-        <button onclick="editarNombreParadero(${p.id})">Renombrar</button>
-        <button onclick="eliminarParadero(${p.id})">Eliminar</button>
-      `);
+          marker.bindPopup(`
+            <strong>${p.nombre}</strong><br>
+            <button onclick="editarParadero(${p.id})">Renombrar</button>
+            <button onclick="eliminarParadero(${p.id})">Eliminar</button>
+          `);
 
-      marker.on('dragend', function (e) {
-        const nuevo = e.target.getLatLng();
-        actualizarParaderoPosicion(p.id, nuevo.lat, nuevo.lng);
+          marker.on('dragend', function (e) {
+            const nuevo = e.target.getLatLng();
+            actualizarParaderoPosicion(p.id, nuevo.lat, nuevo.lng);
+          });
+
+          paraderosMap.set(p.id, marker);
+        });
       });
 
-      paraderosMap.set(p.id, marker); // Guardamos el marcador
-    });
-  });
+    function editarParadero(id) {
+      let nuevoNombre = prompt("Nuevo nombre del paradero:");
+      nuevoNombre = nuevoNombre ? nuevoNombre.trim() : '';
+      const esValido = /^[a-zA-Z0-9\sáéíóúÁÉÍÓÚñÑ]+$/.test(nuevoNombre);
 
+      if (!nuevoNombre || !esValido) {
+        alert("Nombre no válido. Solo letras, números y espacios.");
+        return;
+      }
 
-  function editarParadero(id) {
-  const nuevoNombre = prompt("Nuevo nombre del paradero:");
-  if (!nuevoNombre) return;
-
-  fetch('editar_paradero.php', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id, nombre: nuevoNombre })
-  })
-    .then(res => res.text())
-    .then(msg => {
-      alert(msg);
-      location.reload(); // o recargar solo los marcadores
-    })
-    .catch(err => alert("Error al editar: " + err));
-    }
-
-    function actualizarParaderoPosicion(id, lat, lng) {
-  fetch('editar_paradero_posicion.php', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id, lat, lng })
-  })
-    .then(res => res.text())
-    .then(msg => console.log(msg))
-    .catch(err => console.error("Error al mover paradero:", err));
-}
-
-    function eliminarParadero(id) {
-    if (!confirm("¿Eliminar este paradero?")) return;
-
-    fetch('eliminar_paradero.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id })
-    })
+      fetch('editar_paradero.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, nombre: nuevoNombre })
+      })
       .then(res => res.text())
       .then(msg => {
         alert(msg);
-        location.reload(); // o eliminar marcador del mapa sin recargar
+        location.reload();
+      })
+      .catch(err => alert("Error al editar: " + err));
+    }
+
+    function actualizarParaderoPosicion(id, lat, lng) {
+      fetch('editar_paradero_posicion.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, lat, lng })
+      })
+      .then(res => res.text())
+      .then(msg => console.log(msg))
+      .catch(err => console.error("Error al mover paradero:", err));
+    }
+
+    function eliminarParadero(id) {
+      if (!confirm("¿Eliminar este paradero?")) return;
+
+      fetch('eliminar_paradero.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      })
+      .then(res => res.text())
+      .then(msg => {
+        alert(msg);
+        location.reload();
       })
       .catch(err => alert("Error al eliminar: " + err));
-  }
+    }
 
-  function activarEdicionParaderos() {
-  paraderosMap.forEach(marker => marker.dragging.enable());
-  alert("Puedes mover los paraderos ahora.");
-}
+    function activarEdicionParaderos() {
+      paraderosMap.forEach(marker => marker.dragging.enable());
+      alert("Puedes mover los paraderos ahora.");
+    }
 
-function desactivarEdicionParaderos() {
-  paraderosMap.forEach(marker => marker.dragging.disable());
-  alert("Edición desactivada.");
-}
-
-
+    function desactivarEdicionParaderos() {
+      paraderosMap.forEach(marker => marker.dragging.disable());
+      alert("Edición desactivada.");
+    }
   </script>
 </body>
 </html>

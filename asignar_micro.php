@@ -98,10 +98,21 @@ if ($conflicto) {
             $ruta_id = $ruta['ruta_id'];
 
             // Insertar asignación
-            $stmtAsignacion = $pdo->prepare("INSERT INTO asignacion_micro 
-                                             (chofer_id, micro_id, fecha, hora_inicio, hora_fin)
-                                             VALUES (?, ?, ?, ?, ?)");
-            $stmtAsignacion->execute([$chofer_id, $micro_id, $fecha, $inicio, $fin]);
+           $stmtAsignacion = $pdo->prepare("SELECT id FROM asignacion_micro WHERE chofer_id = ? AND fecha = ?");
+            $stmtAsignacion->execute([$chofer_id, $fecha]);
+            $asignacion = $stmtAsignacion->fetch();
+
+            if ($asignacion) {
+                $stmt = $pdo->prepare("UPDATE asignacion_micro 
+                                    SET micro_id = ?, hora_inicio = ?, hora_fin = ?, chofer_id = ? 
+                                    WHERE id = ?");
+                $stmt->execute([$micro_id, $inicio, $fin, $chofer_id, $asignacion['id']]);
+            } else {
+                $stmt = $pdo->prepare("INSERT INTO asignacion_micro 
+                                    (chofer_id, micro_id, fecha, hora_inicio, hora_fin)
+                                    VALUES (?, ?, ?, ?, ?)");
+                $stmt->execute([$chofer_id, $micro_id, $fecha, $inicio, $fin]);
+            }
 
             // Insertar horario
             $stmtHorario = $pdo->prepare("INSERT INTO horario 
@@ -130,6 +141,7 @@ if (isset($_POST['actualizar_horario'])) {
 // Procesar actualización
 if (isset($_POST['confirmar_actualizacion'])) {
     $horario_id = $_POST['horario_id'];
+    $chofer_id  = $_POST['chofer_id'];
     $micro_id   = $_POST['micro_id'];
     $fecha      = $_POST['fecha'];
     $inicio     = $_POST['inicio'];
@@ -154,49 +166,43 @@ if (isset($_POST['confirmar_actualizacion'])) {
         $error_message = "❌ El horario excede las 10 horas máximas permitidas por día.";
     }
 
-    // Validación de horario prohibido (00:00 - 05:30), considerar el mismo día y día siguiente
+    // Validación de horario prohibido (00:00 - 05:30)
     $prohibido_inicio_dia1 = strtotime(date('Y-m-d', $inicio_ts) . " 00:00");
     $prohibido_fin_dia1    = strtotime(date('Y-m-d', $inicio_ts) . " 05:30");
     $prohibido_inicio_dia2 = strtotime(date('Y-m-d', $fin_ts) . " 00:00");
     $prohibido_fin_dia2    = strtotime(date('Y-m-d', $fin_ts) . " 05:30");
 
     if (
-        ($inicio_ts < $prohibido_fin_dia1 && $fin_ts > $prohibido_inicio_dia1) || // Cruza la franja prohibida del mismo día
-        ($inicio_ts < $prohibido_fin_dia2 && $fin_ts > $prohibido_inicio_dia2)    // Cruza la franja del día siguiente
+        ($inicio_ts < $prohibido_fin_dia1 && $fin_ts > $prohibido_inicio_dia1) || 
+        ($inicio_ts < $prohibido_fin_dia2 && $fin_ts > $prohibido_inicio_dia2)
     ) {
         $error_message = "❌ El horario no puede incluir horas entre las 00:00 y 05:30.";
     }
-    $inicio_str = $inicio; // ej: '07:00:00'
-    $fin_str = $fin;       // ej: '15:00:00'
 
-    // Consulta para buscar si hay horarios que se solapen para el mismo chofer y fecha
+    // Validación de cruce de horarios
     $sql = "SELECT * FROM horario 
             WHERE chofer_id = :chofer_id 
-            AND fecha = :fecha 
-            AND id != :horario_id -- si es nuevo insert, pasar 0 o NULL para no excluir
-            AND (
-                (hora_inicio < :fin AND hora_fin > :inicio)
-            )";
-
+              AND fecha = :fecha 
+              AND id != :horario_id
+              AND (
+                  (hora_inicio < :fin AND hora_fin > :inicio)
+              )";
     $stmt = $pdo->prepare($sql);
     $stmt->execute([
-        ':chofer_id' => $chofer_id,
-        ':fecha'     => $fecha,
-        ':inicio'    => $inicio_str,
-        ':fin'       => $fin_str,
-        ':horario_id'=> $horario_id ?? 0,
+        ':chofer_id'  => $chofer_id,
+        ':fecha'      => $fecha,
+        ':inicio'     => $inicio,
+        ':fin'        => $fin,
+        ':horario_id' => $horario_id,
     ]);
 
     $conflicto = $stmt->fetch();
 
     if ($conflicto) {
-        // Hay conflicto de horario para el chofer
-        $error_message ="<p style='color:red;'>❌ El chofer ya tiene un horario que se cruza con este.</p>";
-        // NO insertar ni actualizar
-    } 
+        $error_message = "<p style='color:red;'>❌ El chofer ya tiene un horario que se cruza con este.</p>";
+    }
 
-
-    // Si hay error, mostrar y salir
+    // Mostrar error y salir si hay
     if (!empty($error_message)) {
         echo "<p style='color:red;'>$error_message</p>";
         return;
@@ -207,50 +213,34 @@ if (isset($_POST['confirmar_actualizacion'])) {
     $stmtRuta->execute([$micro_id]);
     $ruta = $stmtRuta->fetch(PDO::FETCH_ASSOC);
 
-    if ($ruta) {
-        $ruta_id = $ruta['ruta_id'];
-
-        // Obtener chofer_id desde horario
-        $stmt = $pdo->prepare("SELECT chofer_id FROM horario WHERE id = ?");
-        $stmt->execute([$horario_id]);
-        $row = $stmt->fetch();
-
-        if ($row) {
-            $chofer_id = $row['chofer_id'];
-
-            // Verificar si ya hay una asignación
-            $stmtAsignacion = $pdo->prepare("SELECT id FROM asignacion_micro WHERE chofer_id = ? AND fecha = ?");
-            $stmtAsignacion->execute([$chofer_id, $fecha]);
-            $asignacion = $stmtAsignacion->fetch();
-
-            if ($asignacion) {
-                // Actualizar asignación
-                $stmt = $pdo->prepare("UPDATE asignacion_micro 
-                                       SET micro_id = ?, hora_inicio = ?, hora_fin = ? 
-                                       WHERE id = ?");
-                $stmt->execute([$micro_id, $inicio, $fin, $asignacion['id']]);
-            } else {
-                // Insertar asignación nueva
-                $stmt = $pdo->prepare("INSERT INTO asignacion_micro 
-                                       (chofer_id, micro_id, fecha, hora_inicio, hora_fin)
-                                       VALUES (?, ?, ?, ?, ?)");
-                $stmt->execute([$chofer_id, $micro_id, $fecha, $inicio, $fin]);
-            }
-
-            // Actualizar horario
-            $stmt = $pdo->prepare("UPDATE horario 
-                                   SET ruta_id = ?, fecha = ?, hora_inicio = ?, hora_fin = ? 
-                                   WHERE id = ?");
-            $stmt->execute([$ruta_id, $fecha, $inicio, $fin, $horario_id]);
-
-            echo "<p style='color:green;'>✅ Horario actualizado correctamente.</p>";
-        } else {
-            echo "<p style='color:red;'>❌ No se encontró el horario a actualizar.</p>";
-        }
-    } else {
+    if (!$ruta) {
         echo "<p style='color:red;'>❌ No se encontró la ruta asociada a la micro.</p>";
+        return;
     }
+
+    $ruta_id = $ruta['ruta_id'];
+
+    // Eliminar asignación anterior del horario
+    $stmt = $pdo->prepare("DELETE FROM asignacion_micro 
+                           WHERE chofer_id = (SELECT chofer_id FROM horario WHERE id = ?) 
+                             AND fecha = ?");
+    $stmt->execute([$horario_id, $fecha]);
+
+    // Insertar nueva asignación con el nuevo chofer
+    $stmt = $pdo->prepare("INSERT INTO asignacion_micro 
+                           (chofer_id, micro_id, fecha, hora_inicio, hora_fin)
+                           VALUES (?, ?, ?, ?, ?)");
+    $stmt->execute([$chofer_id, $micro_id, $fecha, $inicio, $fin]);
+
+    // Actualizar el horario (incluyendo chofer_id)
+    $stmt = $pdo->prepare("UPDATE horario 
+                           SET chofer_id = ?, ruta_id = ?, fecha = ?, hora_inicio = ?, hora_fin = ? 
+                           WHERE id = ?");
+    $stmt->execute([$chofer_id, $ruta_id, $fecha, $inicio, $fin, $horario_id]);
+
+    echo "<p style='color:green;'>✅ Horario actualizado correctamente.</p>";
 }
+
 
 // Eliminar horarios
 if (isset($_POST['delete_horario_id'])) {
@@ -418,7 +408,13 @@ $horarios = $pdo->query("SELECT h.id, c.nombre AS chofer_nombre,
 <form method="POST" class="mx-auto" style="max-width: 500px;">
     <input type="hidden" name="confirmar_actualizacion" value="1">
     <input type="hidden" name="horario_id" value="<?= $editId ?>">
-
+    <select name="chofer_id" class="form-select mb-2" required>
+    <?php foreach ($choferes as $chofer): ?>
+        <option value="<?= $chofer['id'] ?>" <?= $editData['chofer_id'] == $chofer['id'] ? 'selected' : '' ?>>
+            <?= htmlspecialchars($chofer['nombre'] . ' ' . $chofer['apellido']) ?>
+        </option>
+    <?php endforeach; ?>
+    </select>
     <select name="micro_id" class="form-select mb-2" required>
         <option value="" disabled>Selecciona micro</option>
         <?php foreach ($micros as $micro): ?>

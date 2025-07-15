@@ -230,7 +230,7 @@ $isAdmin = ($_SESSION['usuario_rol'] === 'admin'); // Verificación del rol de a
   <div class="title">🚍 Mapa Transporte Público - Osorno</div>
   <div class="buttons">
     <a href="">Inicio</a>
-    <a href="usuarioreclamo.php">reclamos</a>
+    <a href="usuarioreclamo.php">Reclamos</a>
     
     <?php if ($isAdmin): ?>
     <div class="dropdown">
@@ -239,9 +239,10 @@ $isAdmin = ($_SESSION['usuario_rol'] === 'admin'); // Verificación del rol de a
         <a href="conductores.php">Ver conductores</a>
         <a href="micros.php">Ver micros</a>
         <a href="ruta.html">Ver rutas</a>
-        <a href="paraderos.html">Ver Paraderos</a>
-        <a href="reclamo.php">Ver Reclamos</a>
-        <a href="asignar_micro.php">Asignar Micros</a>
+        <a href="paraderos.html">Ver paraderos</a>
+        <a href="reclamo.php">Ver reclamos</a>
+        <a href="asignar_micro.php">Asignar micros</a>
+        <a href="matenimientomicro.php">Mantenimiento de micros</a>
       </div>
     </div>
     <?php endif; ?>
@@ -334,6 +335,12 @@ let recordatorioEditandoId = null;
 
 function crearRecordatorio(paraderoId) {
   
+  const diaFechaInput = document.getElementById('diaFecha');
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  diaFechaInput.min = hoy.toISOString().split('T')[0];
+  diaFechaInput.value = ''; 
+
   console.log("Crear recordatorio para paradero:", paraderoId);
   recordatorioParaderoId = paraderoId;
   fetch('listar_rutas.php')
@@ -427,7 +434,23 @@ function guardarRecordatorio() {
     alert("Paradero no definido.");
     return;
   }
+  if (tipo === 'unico') {
+  fecha = document.getElementById('diaFecha')?.value;
+  if (!fecha) {
+    alert("Selecciona una fecha válida.");
+    return;
+  }
 
+  // Validación extra: que no sea una fecha pasada
+  const fechaSeleccionada = new Date(fecha);
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+
+  if (fechaSeleccionada < hoy) {
+    alert("La fecha no puede ser anterior a hoy.");
+    return;
+  }
+}
   const datos = {
   paradero_id: recordatorioParaderoId,
   ruta_id: rutaId,
@@ -536,6 +559,11 @@ function eliminarRecordatorio(id) {
 }
 
 function editarRecordatorio(id) {
+
+  const diaFechaInput = document.getElementById('diaFecha');
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  diaFechaInput.min = hoy.toISOString().split('T')[0];
   fetch(`obtener_recordatorio.php?id=${id}`)
     .then(res => res.json())
     .then(rec => {
