@@ -233,6 +233,7 @@ function formatoFecha($fecha) {
 </head>
 <body>
 <div class="container mt-4">
+
     <h1>Gestión de Micros</h1>
 
     <?php if (!empty($alertas)): ?>
@@ -264,8 +265,7 @@ function formatoFecha($fecha) {
                 <input type="text" name="patente" maxlength="6" class="form-control" required
                     value="<?= htmlspecialchars($_POST['patente'] ?? $micro_editar['patente'] ?? '') ?>"
                     pattern="[A-Za-z]{4}[0-9]{2}"
-                    title="4 letras seguidas de 2 números. Ejemplo: ABCD12"
-                    placeholder="4 letras y 2 números, ej: ABCD12">
+                    title="4 letras seguidas de 2 números. Ejemplo: ABCD12">
             </div>
             <div class="col-md-3">
                 <label>Permiso Desde</label>
@@ -344,12 +344,15 @@ function formatoFecha($fecha) {
             </div>
         </div>
 
-        <button type="submit" name="<?= $micro_editar ? 'actualizar' : 'crear' ?>" class="btn btn-primary">
-            <?= $micro_editar ? 'Actualizar' : 'Crear' ?>
-        </button>
-        <?php if ($micro_editar): ?>
-            <a href="micros.php" class="btn btn-secondary">Cancelar</a>
-        <?php endif; ?>
+        <div class="d-flex gap-2">
+            <button type="submit" name="<?= $micro_editar ? 'actualizar' : 'crear' ?>" class="btn btn-primary">
+                <?= $micro_editar ? 'Actualizar' : 'Crear' ?>
+            </button>
+            <a href="home.php" class="btn btn-secondary">Volver</a>
+            <?php if ($micro_editar): ?>
+                <a href="micros.php" class="btn btn-secondary">Cancelar</a>
+            <?php endif; ?>
+        </div>
     </form>
 
     <table class="table table-bordered table-hover">
@@ -373,7 +376,7 @@ function formatoFecha($fecha) {
         </thead>
         <tbody>
         <?php foreach ($micros as $m): ?>
-            <tr <?= (!$m['herramientas'] ? 'class="no-marcado"' : '') ?>>
+            <tr <?= (!$m['herramientas'] || !$m['mantenciones_al_dia'] ? 'class="no-marcado"' : '') ?>>
                 <td class="text-center"><?= $m['id'] ?></td>
                 <td><?= htmlspecialchars($m['patente']) ?></td>
                 <td class="text-center"><?= formatoFecha($m['permiso_desde']) ?></td>
