@@ -14,30 +14,46 @@ function convertirArrayPostgres($cadena) {
     return array_map('trim', explode(',', $limpia));
 }
 
-// PROCESAR FORMULARIO
+$rutas = $pdo->query("SELECT id, nombre FROM ruta ORDER BY nombre")->fetchAll();
+
+// Variables para mantener valores si hay error
+$fecha = $_POST['fecha'] ?? date('Y-m-d');
+$hora = $_POST['hora'] ?? date('H:i');
+$ruta_id = $_POST['ruta_id'] ?? '';
+$patente = $_POST['patente'] ?? '';
+$descripcion = $_POST['descripcion'] ?? '';
+$categorias = $_POST['categorias'] ?? [];
+$tipo_problema = $_POST['tipo_problema'] ?? [];
+
+$mensaje = '';
+$mensaje_tipo = '';
+
 if (isset($_POST['add'])) {
-    $usuario_id     = $_SESSION['usuario_id'];
-    $ruta_id        = !empty($_POST['ruta_id']) ? $_POST['ruta_id'] : null;
-    $patente        = trim($_POST['patente'] ?? null);
-    $fecha          = $_POST['fecha'] ?? date('Y-m-d');
-    $hora           = $_POST['hora'] ?? date('H:i:s');
-    $categorias     = $_POST['categorias'] ?? [];
-    $tipo_problema  = $_POST['tipo_problema'] ?? [];
-    $descripcion    = trim($_POST['descripcion'] ?? '');
+    $usuario_id = $_SESSION['usuario_id'];
 
     // Validaciones
-    if (empty($descripcion)) {
-        echo "<div class='alert alert-danger'>⚠️ La descripción no puede estar vacía.</div>";
+    if (empty($tipo_problema)) {
+        $mensaje = "⚠️ Selecciona al menos un tipo de problema.";
+        $mensaje_tipo = "danger";
+    } elseif (in_array('micro', $tipo_problema) && empty($ruta_id)) {
+        $mensaje = "⚠️ Debes seleccionar una ruta si el problema es 'micro'.";
+        $mensaje_tipo = "danger";
+    } elseif (empty($descripcion)) {
+        $mensaje = "⚠️ La descripción no puede estar vacía.";
+        $mensaje_tipo = "danger";
     } elseif (empty($categorias)) {
-        echo "<div class='alert alert-danger'>⚠️ Selecciona al menos una categoría.</div>";
-    } elseif (empty($tipo_problema)) {
-        echo "<div class='alert alert-danger'>⚠️ Selecciona al menos un tipo de problema.</div>";
+        $mensaje = "⚠️ Selecciona al menos una categoría.";
+        $mensaje_tipo = "danger";
     } elseif (!empty($patente) && !preg_match('/^[A-Za-z]{4}[0-9]{2}$/', $patente)) {
-        echo "<div class='alert alert-danger'>⚠️ La patente debe tener exactamente 4 letras y 2 números (Ej: ABCD12).</div>";
+        $mensaje = "⚠️ La patente debe tener 4 letras seguidas de 2 números (Ej: ABCD12).";
+        $mensaje_tipo = "danger";
+    } elseif ($fecha !== date('Y-m-d')) {
+        $mensaje = "⚠️ La fecha debe ser exactamente la de hoy.";
+        $mensaje_tipo = "danger";
     } else {
         // Formatear arrays
-        $categorias_pg     = '{' . implode(',', array_map('pg_escape_string', $categorias)) . '}';
-        $tipo_problema_pg  = '{' . implode(',', array_map('pg_escape_string', $tipo_problema)) . '}';
+        $categorias_pg = '{' . implode(',', array_map('pg_escape_string', $categorias)) . '}';
+        $tipo_problema_pg = '{' . implode(',', array_map('pg_escape_string', $tipo_problema)) . '}';
 
         try {
             $stmt = $pdo->prepare("INSERT INTO reclamo 
@@ -45,22 +61,31 @@ if (isset($_POST['add'])) {
                 VALUES (?, ?, ?, ?, ?, ?, ?, 'pendiente', ?)");
             $stmt->execute([
                 $usuario_id,
-                $ruta_id,
+                $ruta_id ?: null,
                 $fecha,
                 $hora,
                 $categorias_pg,
                 $tipo_problema_pg,
                 $descripcion,
-                $patente
+                $patente ?: null
             ]);
-            echo "<div class='alert alert-success'>✅ Reclamo registrado correctamente.</div>";
+            $mensaje = "✅ Reclamo registrado correctamente.";
+            $mensaje_tipo = "success";
+
+            // Vaciar formulario tras éxito
+            $fecha = date('Y-m-d');
+            $hora = date('H:i');
+            $ruta_id = '';
+            $patente = '';
+            $descripcion = '';
+            $categorias = [];
+            $tipo_problema = [];
         } catch (PDOException $e) {
-            echo "<div class='alert alert-danger'>❌ Error: " . $e->getMessage() . "</div>";
+            $mensaje = "❌ Error: " . $e->getMessage();
+            $mensaje_tipo = "danger";
         }
     }
 }
-
-$rutas = $pdo->query("SELECT id, nombre FROM ruta ORDER BY nombre")->fetchAll();
 
 // CONSULTAR MIS RECLAMOS
 $usuario_id = $_SESSION['usuario_id'];
@@ -97,18 +122,31 @@ $reclamos = $mis_reclamos->fetchAll();
 </head>
 <body class="bg-light">
 
+<button onclick="location.href='home.php'" class="btn btn-primary m-3">Volver</button>
+
 <div class="container py-4">
     <h2 class="text-center mb-4">Formulario de Reclamos</h2>
 
-    <form method="POST">
+    <?php if ($mensaje): ?>
+        <div class="alert alert-<?= $mensaje_tipo ?>"><?= htmlspecialchars($mensaje) ?></div>
+    <?php endif; ?>
+
+    <form method="POST" onsubmit="return confirmarEnvio()">
+
+        <div class="mb-3">
+            <label class="form-label">Tipo de problema:</label><br>
+            <label><input type="checkbox" name="tipo_problema[]" value="micro" <?= in_array('micro', $tipo_problema) ? 'checked' : '' ?>> Micro</label>
+            <label><input type="checkbox" name="tipo_problema[]" value="plataforma" <?= in_array('plataforma', $tipo_problema) ? 'checked' : '' ?>> Plataforma</label>
+        </div>
+
         <div class="mb-3">
             <label for="fecha" class="form-label">Fecha</label>
-            <input type="date" name="fecha" id="fecha" class="form-control" value="<?= date('Y-m-d') ?>" required>
+            <input type="date" name="fecha" id="fecha" class="form-control" value="<?= htmlspecialchars($fecha) ?>" min="<?= date('Y-m-d') ?>" max="<?= date('Y-m-d') ?>" required>
         </div>
 
         <div class="mb-3">
             <label for="hora" class="form-label">Hora</label>
-            <input type="time" name="hora" id="hora" class="form-control" value="<?= date('H:i') ?>" required>
+            <input type="time" name="hora" id="hora" class="form-control" value="<?= htmlspecialchars($hora) ?>" required>
         </div>
 
         <div class="mb-3">
@@ -116,37 +154,32 @@ $reclamos = $mis_reclamos->fetchAll();
             <select name="ruta_id" id="ruta_id" class="form-select">
                 <option value="">-- Seleccionar ruta --</option>
                 <?php foreach ($rutas as $ru): ?>
-                    <option value="<?= $ru['id'] ?>"><?= htmlspecialchars($ru['nombre']) ?></option>
+                    <option value="<?= $ru['id'] ?>" <?= ($ru['id'] == $ruta_id) ? 'selected' : '' ?>>
+                        <?= htmlspecialchars($ru['nombre']) ?>
+                    </option>
                 <?php endforeach; ?>
             </select>
         </div>
 
         <div class="mb-3">
             <label for="patente" class="form-label">Patente</label>
-            <input type="text" name="patente" id="patente" class="form-control" maxlength="6" placeholder="Ej: ABCD12">
+            <input type="text" name="patente" id="patente" class="form-control" maxlength="6" placeholder="Ej: ABCD12" value="<?= htmlspecialchars($patente) ?>">
         </div>
 
         <div class="mb-3">
             <label class="form-label">Categorías:</label><br>
-            <label><input type="checkbox" name="categorias[]" value="maltrato"> Maltrato</label>
-            <label><input type="checkbox" name="categorias[]" value="retraso"> Retraso</label>
-            <label><input type="checkbox" name="categorias[]" value="mala_conduccion"> Mala conducción</label>
-            <label><input type="checkbox" name="categorias[]" value="otros"> Otros</label>
-        </div>
-
-        <div class="mb-3">
-            <label class="form-label">Tipo de problema:</label><br>
-            <label><input type="checkbox" name="tipo_problema[]" value="micro"> Micro</label>
-            <label><input type="checkbox" name="tipo_problema[]" value="plataforma"> Plataforma</label>
+            <label><input type="checkbox" name="categorias[]" value="maltrato" <?= in_array('maltrato', $categorias) ? 'checked' : '' ?>> Maltrato</label>
+            <label><input type="checkbox" name="categorias[]" value="retraso" <?= in_array('retraso', $categorias) ? 'checked' : '' ?>> Retraso</label>
+            <label><input type="checkbox" name="categorias[]" value="mala_conduccion" <?= in_array('mala_conduccion', $categorias) ? 'checked' : '' ?>> Mala conducción</label>
+            <label><input type="checkbox" name="categorias[]" value="otros" <?= in_array('otros', $categorias) ? 'checked' : '' ?>> Otros</label>
         </div>
 
         <div class="mb-3">
             <label for="descripcion" class="form-label">Descripción</label>
-            <textarea name="descripcion" id="descripcion" class="form-control" rows="4" required></textarea>
+            <textarea name="descripcion" id="descripcion" class="form-control" rows="4" placeholder="Cuéntanos con más detalle tu problema." required><?= htmlspecialchars($descripcion) ?></textarea>
         </div>
 
         <button type="submit" name="add" class="btn btn-success">Enviar Reclamo</button>
-        <a href="home.php" class="btn btn-secondary">Volver</a>
     </form>
 
     <h3 class="mt-5 mb-3 text-center">Mis Reclamos</h3>
@@ -194,11 +227,14 @@ $reclamos = $mis_reclamos->fetchAll();
             </tbody>
         </table>
     </div>
-
 </div>
 
 <script>
-// Bloqueo automático de ruta y patente si seleccionan "plataforma"
+function confirmarEnvio() {
+    return confirm("¿Estás seguro de que deseas enviar este reclamo?");
+}
+
+// Desactiva ruta y patente si se selecciona "plataforma"
 document.addEventListener('DOMContentLoaded', () => {
     const tipoProblemaChecks = document.querySelectorAll('input[name="tipo_problema[]"]');
     const rutaSelect = document.getElementById('ruta_id');
