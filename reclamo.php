@@ -235,9 +235,9 @@ function checkedInArray($value, $array) {
 
             <?php if (!$es_completado): ?>
                 <button type="submit" name="editar" class="btn btn-primary">Guardar Cambios</button>
-                <a href="reclamo.php#top" class="btn btn-secondary">Cancelar</a>
+                <a href="home.php" class="btn btn-secondary">Volver</a>
             <?php else: ?>
-                <a href="reclamo.php#top" class="btn btn-secondary">Volver</a>
+                <a href="home.php" class="btn btn-secondary">Volver</a>
             <?php endif; ?>
         </form>
 
